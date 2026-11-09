@@ -25,7 +25,7 @@ global.window = { __ModuleLoader__: { load: (mod) => { captured = mod; } }, loca
 eval(SRC);
 
 const fakeReact = { createElement: () => ({}), useState: (v) => [v, () => {}] };
-const loadPlugin = () => captured.factory((name) => (name === 'react' ? fakeReact : {}));
+const loadPlugin = (req) => captured.factory(req || ((name) => (name === 'react' ? fakeReact : {})));
 
 function makeRegistry() {
   const defs = new Map();
@@ -80,7 +80,7 @@ function setup(opts = {}) {
     get: (name) => (name === 'sidebarRight' ? sidebar : undefined),
     effect: (fn) => { const d = fn(); if (typeof d === 'function') disposers.push(d); },
   };
-  loadPlugin().apply(ctx);
+  loadPlugin(opts.require).apply(ctx);
   return {
     reg, slots, openTabs, sidebar, ctx,
     dispose() { for (const d of disposers.reverse()) { try { d(); } catch (e) {} } },
@@ -197,7 +197,7 @@ test('dispose restores original keepMounted', () => {
 
 function makeFakeTerminal(initial) {
   const options = Object.assign({ scrollback: 1000, smoothScrollDuration: 0 }, initial || {});
-  return { options, write() {}, resize() {}, dispose() {}, element: {} };
+  return { options, _addons: [], write() {}, resize() {}, dispose() {}, element: {}, loadAddon(a) { this._addons.push(a); } };
 }
 
 function makeXtermElement(term) {
@@ -253,5 +253,56 @@ test('tuner restores the original scrollback when the setting is cleared', () =>
       assert.strictEqual(term.options.scrollback, 1000);
     } finally { env.dispose(); }
   });
+});
+
+// --- experimental WebGL renderer ---
+
+class FakeWebglAddon {
+  constructor() { this.disposed = false; }
+  onContextLoss() { return () => {}; }
+  dispose() { this.disposed = true; }
+}
+
+function requireWithWebgl(result) {
+  const req = (name) => (name === 'react' ? fakeReact : {});
+  req.async = () => Promise.resolve(result);
+  return req;
+}
+
+test('webgl defaults off: chunk is not loaded / no addon attached', async () => {
+  const term = makeFakeTerminal();
+  const xtermEl = makeXtermElement(term);
+  let env;
+  withFakeDocument([xtermEl], () => { env = setup({ config: { kinds: ['terminal'] } }); });
+  await tick();
+  try {
+    assert.strictEqual(term._addons.length, 0);
+  } finally { env.dispose(); }
+});
+
+test('webgl on: lazily loads the chunk and calls loadAddon', async () => {
+  const term = makeFakeTerminal();
+  const xtermEl = makeXtermElement(term);
+  let env;
+  const req = requireWithWebgl({ WebglAddon: FakeWebglAddon });
+  withFakeDocument([xtermEl], () => { env = setup({ config: { kinds: ['terminal'], webgl: true }, require: req }); });
+  await tick();
+  try {
+    assert.strictEqual(term._addons.length, 1);
+    assert.ok(term._addons[0] instanceof FakeWebglAddon);
+  } finally { env.dispose(); }
+});
+
+test('webgl on but chunk load fails: no addon, no throw', async () => {
+  const term = makeFakeTerminal();
+  const xtermEl = makeXtermElement(term);
+  let env;
+  const req = (name) => (name === 'react' ? fakeReact : {});
+  req.async = () => Promise.reject(new Error('boom'));
+  withFakeDocument([xtermEl], () => { env = setup({ config: { kinds: ['terminal'], webgl: true }, require: req }); });
+  await tick();
+  try {
+    assert.strictEqual(term._addons.length, 0);
+  } finally { env.dispose(); }
 });
 

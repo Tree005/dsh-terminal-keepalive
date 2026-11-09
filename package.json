@@ -1,9 +1,9 @@
 {
   "name": "dsh-terminal-keepalive",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "private": true,
-  "description": "Keep the DSH right-sidebar terminal mounted across tab switches so it no longer reloads.",
-  "keywords": ["dsh", "dsh-plugin", "terminal", "keepalive"],
+  "description": "Keep the DSH right-sidebar terminal mounted across tab switches, with live terminal tuning (scrollback, smooth scroll, experimental WebGL renderer).",
+  "keywords": ["dsh", "dsh-plugin", "terminal", "keepalive", "webgl"],
   "repository": { "type": "git", "url": "git+https://github.com/Tree005/dsh-terminal-keepalive.git" },
   "homepage": "https://github.com/Tree005/dsh-terminal-keepalive#readme",
   "type": "module",
@@ -13,10 +13,11 @@
   "exports": {
     ".": "./index.js",
     "./client": "./client.js",
+    "./client.webgl.js": "./client.webgl.js",
     "./locale/*.json": "./locale/*.json",
     "./icon": "./icon.svg"
   },
-  "files": ["index.js", "client.js", "cordis.patch.yml", "locale/*.json", "icon.svg"],
+  "files": ["index.js", "client.js", "client.webgl.js", "cordis.patch.yml", "locale/*.json", "icon.svg"],
   "dsh": {
     "bundle": { "patch": "./cordis.patch.yml" },
     "client": {

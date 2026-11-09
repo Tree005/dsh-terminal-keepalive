@@ -25,6 +25,7 @@ window.__ModuleLoader__.load({
       var maxOpenTabs = DEFAULT_MAX_OPEN_TABS;
       var scrollback = null; // null = leave whatever DSH/Host chose (do not override)
       var smoothScrollDuration = 0; // 0 = instant scroll (xterm default)
+      var webgl = false; // experimental GPU (WebGL) renderer for running terminals
       try {
         var raw = typeof window !== 'undefined' && window.localStorage ? window.localStorage.getItem(CONFIG_KEY) : null;
         if (raw) {
@@ -49,12 +50,13 @@ window.__ModuleLoader__.load({
             if (typeof parsed.smoothScrollDuration === 'number' && isFinite(parsed.smoothScrollDuration) && parsed.smoothScrollDuration >= 0) {
               smoothScrollDuration = Math.floor(parsed.smoothScrollDuration);
             }
+            if (parsed.webgl === true) webgl = true;
           }
         }
       } catch (e) {
         // malformed config -> defaults
       }
-      return { kinds: kinds, maxOpenTabs: maxOpenTabs, scrollback: scrollback, smoothScrollDuration: smoothScrollDuration };
+      return { kinds: kinds, maxOpenTabs: maxOpenTabs, scrollback: scrollback, smoothScrollDuration: smoothScrollDuration, webgl: webgl };
     }
 
     // Seed the default config once so it is discoverable (DevTools -> Application ->
@@ -67,7 +69,8 @@ window.__ModuleLoader__.load({
             kinds: DEFAULT_KINDS.slice(),
             maxOpenTabs: DEFAULT_MAX_OPEN_TABS,
             scrollback: null,
-            smoothScrollDuration: 0
+            smoothScrollDuration: 0,
+            webgl: false
           }));
         }
       } catch (e) {}
@@ -88,7 +91,8 @@ window.__ModuleLoader__.load({
             kinds: kinds,
             maxOpenTabs: max,
             scrollback: scrollback,
-            smoothScrollDuration: smooth
+            smoothScrollDuration: smooth,
+            webgl: next.webgl === true
           }));
         }
       } catch (e) {}
@@ -117,6 +121,9 @@ window.__ModuleLoader__.load({
       var smoothState = React.useState(String(initial.smoothScrollDuration || 0));
       var smoothText = smoothState[0];
       var setSmoothText = smoothState[1];
+      var webglState = React.useState(initial.webgl === true);
+      var webglOn = webglState[0];
+      var setWebglOn = webglState[1];
 
       var allKinds = DEFAULT_KINDS.slice();
       var known = ['terminal', 'files', 'text', 'browser'];
@@ -141,7 +148,7 @@ window.__ModuleLoader__.load({
         if (!isFinite(sb) || sb <= 0) sb = null; // empty / 0 -> keep DSH's scrollback
         var smooth = parseInt(smoothText, 10);
         if (!isFinite(smooth) || smooth < 0) smooth = 0;
-        writeConfig({ kinds: kinds, maxOpenTabs: max, scrollback: sb, smoothScrollDuration: smooth });
+        writeConfig({ kinds: kinds, maxOpenTabs: max, scrollback: sb, smoothScrollDuration: smooth, webgl: webglOn });
         try { if (props && typeof props.onConfigChanged === 'function') props.onConfigChanged(); } catch (e) {}
         setSaved(true);
       }
@@ -206,6 +213,15 @@ window.__ModuleLoader__.load({
             style: numStyle
           }),
           h('div', { style: muted }, '给终端的滚动加动画，接近 VSCode 的丝滑手感；建议 80–150。0 表示关闭（xterm 默认）。')),
+        h('div', { style: { display: 'flex', flexDirection: 'column', gap: '6px', maxWidth: '420px' } },
+          h('label', { style: { display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px', color: 'var(--dsw-alias-label-primary)' } },
+            h('input', {
+              type: 'checkbox',
+              checked: webglOn,
+              onChange: function (e) { setWebglOn(e.target.checked); setSaved(false); }
+            }),
+            '实验：WebGL 渲染器（GPU，显著提升滚动/输出流畅度）'),
+          h('div', { style: muted }, '用 GPU 渲染替代 DOM 渲染，是"滚动丝滑"的实质改善。失败/无 GPU/WebGL 上下文丢失会自动回退 DOM；只对当前可见终端挂载，数量超限会自动回退。需重启 DSH 后生效，默认关闭。')),
         h('div', { style: { display: 'flex', alignItems: 'center', gap: '12px' } },
           h('button', {
             type: 'button',
@@ -231,6 +247,12 @@ window.__ModuleLoader__.load({
     function createTerminalTuner() {
       var originals = typeof WeakMap === 'function' ? new WeakMap() : null; // terminal -> { scrollback }
       var elementToTerm = typeof WeakMap === 'function' ? new WeakMap() : null; // .xterm element -> terminal
+      var webglAddons = typeof WeakMap === 'function' ? new WeakMap() : null; // terminal -> WebglAddon
+      var webglLoading = typeof Set === 'function' ? new Set() : null;
+      var webglInstances = []; // addons to dispose on unload
+      var webglCount = 0;
+      var WEBGL_MAX = 8; // per-page WebGL context soft cap (browser limit is ~16)
+      var webglWarned = false;
       var observer = null;
       var warnedNoResolve = false;
       var noop = { refresh: function () {}, dispose: function () {} };
@@ -299,7 +321,62 @@ window.__ModuleLoader__.load({
             if (typeof wantSb === 'number' && opts.scrollback !== wantSb) {
               try { opts.scrollback = wantSb; } catch (e) {}
             }
+            maybeWebgl(term, cfg);
           } catch (e) {}
+        }
+
+        // Experimental GPU renderer: lazily load the vendored @xterm/addon-webgl chunk and
+        // attach it to this live terminal. Default off; falls back to DOM on any failure or
+        // WebGL context loss. Only the first WEBGL_MAX terminals get a context.
+        function maybeWebgl(term, cfg) {
+          try {
+            if (!webglAddons || !webglLoading) return;
+            var existing = webglAddons.get(term);
+            if (cfg.webgl !== true) {
+              if (existing) {
+                try { existing.dispose(); } catch (e) {}
+                webglAddons.delete(term);
+                webglCount = Math.max(0, webglCount - 1);
+              }
+              return;
+            }
+            if (existing || webglLoading.has(term) || webglCount >= WEBGL_MAX) return;
+            if (typeof require === 'undefined' || !require || typeof require.async !== 'function') return;
+            webglLoading.add(term);
+            Promise.resolve(require.async('./client.webgl.js')).then(function (mod) {
+              webglLoading.delete(term);
+              var Addon = mod && mod.WebglAddon;
+              if (!Addon) { webglWarnOnce('chunk has no WebglAddon'); return; }
+              try {
+                var addon = new Addon();
+                if (typeof addon.onContextLoss === 'function') {
+                  try {
+                    addon.onContextLoss(function () {
+                      try { addon.dispose(); } catch (e) {}
+                      webglAddons.delete(term);
+                      webglCount = Math.max(0, webglCount - 1);
+                      webglWarnOnce('context lost; fell back to DOM');
+                    });
+                  } catch (e) {}
+                }
+                term.loadAddon(addon);
+                webglAddons.set(term, addon);
+                webglInstances.push(addon);
+                webglCount += 1;
+              } catch (e) {
+                webglWarnOnce('activate failed: ' + (e && e.message));
+              }
+            }).catch(function (e) {
+              webglLoading.delete(term);
+              webglWarnOnce('load failed: ' + (e && e.message));
+            });
+          } catch (e) {}
+        }
+
+        function webglWarnOnce(detail) {
+          if (webglWarned) return;
+          webglWarned = true;
+          try { console.warn(LOG, 'WebGL renderer unavailable (staying on DOM):', detail); } catch (e) {}
         }
 
         // Resolve (once, cached) and tune a single `.xterm` element.
@@ -362,7 +439,10 @@ window.__ModuleLoader__.load({
         scan();
         return {
           refresh: function () { try { scan(); } catch (e) {} },
-          dispose: function () { try { if (observer) observer.disconnect(); } catch (e) {} },
+          dispose: function () {
+            try { if (observer) observer.disconnect(); } catch (e) {}
+            try { for (var i = 0; i < webglInstances.length; i++) { try { webglInstances[i].dispose(); } catch (e) {} } } catch (e) {}
+          },
         };
       } catch (e) {
         return noop;
