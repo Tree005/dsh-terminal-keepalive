@@ -1,0 +1,48 @@
+name: Bug report
+description: Report a problem with the terminal keep-alive plugin.
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Please include the DSH version and how to reproduce.
+  - type: input
+    id: dsh-version
+    attributes:
+      label: DSH version
+      placeholder: 0.2.2-rc.1
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Which tab kind?
+      options:
+        - terminal
+        - files
+        - text
+        - browser
+        - not sure
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you saw.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+  - type: textarea
+    id: console
+    attributes:
+      label: Console output
+      description: DevTools console lines filtered by `[dsh-terminal-keepalive]`.
+      render: shell
+  - type: input
+    id: config
+    attributes:
+      label: Config
+      description: Contents of `localStorage['dsh-terminal-keepalive.config']`, if changed.

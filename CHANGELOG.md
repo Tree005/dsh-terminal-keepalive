@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Add CI (`.github/workflows/ci.yml`): `node --check` + `node --test` on push/PR.
+- Add ModuleLoader-simulated unit tests (`test/client.test.cjs`) covering config, memory gate, settings-card registration and dispose restore.
+- Add GitHub issue templates (bug report, feature request).
+- README: add a Development section and CI badge (README is English).
+
 ## 0.3.0
 
 - **Visual settings entry.** A config card now appears on the plugin's own page in **Settings → Plugins** (slot `plugins.bundle.config`, key `dsh-terminal-keepalive`): checkboxes for the tab kinds to keep mounted plus a `maxOpenTabs` number field. Saving writes the same localStorage config and applies immediately (no restart).

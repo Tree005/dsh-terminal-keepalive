@@ -7,6 +7,9 @@
   "repository": { "type": "git", "url": "git+https://github.com/Tree005/dsh-terminal-keepalive.git" },
   "homepage": "https://github.com/Tree005/dsh-terminal-keepalive#readme",
   "type": "module",
+  "scripts": {
+    "test": "node --test"
+  },
   "exports": {
     ".": "./index.js",
     "./client": "./client.js",

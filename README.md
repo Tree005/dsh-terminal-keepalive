@@ -1,5 +1,7 @@
 # dsh-terminal-keepalive
 
+[![CI](https://github.com/Tree005/dsh-terminal-keepalive/actions/workflows/ci.yml/badge.svg)](https://github.com/Tree005/dsh-terminal-keepalive/actions/workflows/ci.yml)
+
 Keeps the **right-sidebar terminal** of DeepSeek Harness (DSH) mounted when you switch tabs or sessions, so it no longer reloads / re-flashes / stutters on the way back.
 
 ## What it fixes
@@ -88,6 +90,18 @@ It relies on the client service `sidebarRightTabs` (`register`, `get`, `subscrib
 5. DevTools console: no `[dsh-terminal-keepalive]` warnings.
 6. If broken: confirm `sidebarRightTabs`, `keepMounted` and `sidebarRight.openTabs` still exist; adjust the config or the API in `client.js`.
 7. Memory gate: open more than `maxOpenTabs` terminals of the configured kinds → switching away now reloads them (keep-alive off); close back below the limit → keep-alive returns.
+
+## Development
+
+Zero runtime dependencies; tests use Node's built-in runner and a simulated `ModuleLoader` (no browser/jsdom needed).
+
+```sh
+node --check client.js
+node --check index.js
+node --test
+```
+
+CI runs these on every push and pull request (`.github/workflows/ci.yml`).
 
 ## License
 
