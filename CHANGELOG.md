@@ -1,8 +1,14 @@
 # Changelog
 
+## 0.6.3
+
+- Settings page: **复制诊断** button — copies a support bundle (config + live WebGL status + user agent + timestamp) to the clipboard.
+- Hardened the unit-test suite (now **34 tests**) covering config parsing edge cases, WebGL context cap boundaries, visible-only behavior, and gate transitions.
+- Docs audit: README/CHANGELOG aligned with the 0.6.x reality (Settings page section, WebGL, instant-apply wording).
+
 ## 0.6.2
 
-- Settings page UX polish: **一键推荐** (enable WebGL + smooth-scroll 110 when WebGL2 is available), a recommendation banner (suggests enabling WebGL / raising smooth-scroll), inline **field validation** hints for invalid numbers, and **复制配置 / 粘贴导入** (copy / import the config JSON via the clipboard). Reset-to-default was already present.
+- Settings page UX polish: **一键推荐** (one click sets WebGL on + smooth-scroll 110), a recommendation banner (shown when WebGL2 is available; suggests enabling WebGL / raising smooth-scroll), inline **field validation** hints for invalid numbers, and **复制配置 / 粘贴导入** (copy / import the config JSON via the clipboard). Reset-to-default (恢复默认) was already present.
 
 ## 0.6.1
 

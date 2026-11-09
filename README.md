@@ -37,7 +37,17 @@ Restart DSH after installing.
 
 ## Configuration
 
-**Via the GUI (easiest):** open **Settings → 终端常驻** — the single settings page with every option (tab kinds, `maxOpenTabs`, `scrollback`, `smoothScrollDuration`, and the experimental WebGL renderer `webgl` / `maxWebgl` / `webglVisibleOnly`), plus a live WebGL status line, a **一键推荐** (one-click recommend) button, **复制配置 / 粘贴导入** (copy / import config), inline validation, and reset. Changes write the config below and apply immediately, no restart (enabling WebGL loads the renderer chunk on the spot).
+### Settings page
+
+Open **Settings → 终端常驻** — its own left-nav entry, not the plugin detail page (0.6.1 removed the duplicate card there). It is the single place with every option (tab kinds, `maxOpenTabs`, `scrollback`, `smoothScrollDuration`, and the experimental WebGL renderer `webgl` / `maxWebgl` / `webglVisibleOnly`), plus a live WebGL status line (`supported / attached / cap`). Buttons:
+
+- **一键推荐** — one click sets WebGL on and `smoothScrollDuration` to 110.
+- **复制配置 / 粘贴导入** — copy the current config JSON to the clipboard / paste a JSON back in.
+- **复制诊断** — copy config + WebGL status + user agent + timestamp to the clipboard (for bug reports).
+- **恢复默认** — reset every field to the defaults below.
+- **保存** — write the config and apply it immediately (enabling WebGL loads the renderer chunk on the spot), no restart.
+
+Invalid numbers show **inline validation** hints, and a recommendation banner suggests enabling WebGL / raising smooth-scroll when WebGL2 is available.
 
 **Manually:** the config is a JSON object in `localStorage` under the key **`dsh-terminal-keepalive.config`**; the plugin writes a default on first run, so you can just edit it:
 
@@ -48,7 +58,10 @@ DevTools → Console:
     kinds: ['terminal', 'files', 'text'],  // tab kinds to keep mounted
     maxOpenTabs: 6,                        // memory ceiling (see below)
     scrollback: null,                      // null = keep DSH's value; e.g. 300 to trim the browser buffer
-    smoothScrollDuration: 0                // ms; 0 = off; ~80–150 for VSCode-like smooth scrolling
+    smoothScrollDuration: 0,               // ms; 0 = off; ~80–150 for VSCode-like smooth scrolling
+    webgl: false,                          // experimental GPU renderer (see below)
+    maxWebgl: null,                        // null = follow maxOpenTabs (min 8)
+    webglVisibleOnly: false                // only attach WebGL to the visible terminal
   }))
 then reload the page (Ctrl/Cmd+R) or restart DSH.
 ```
@@ -59,7 +72,7 @@ then reload the page (Ctrl/Cmd+R) or restart DSH.
 | `maxOpenTabs` | `6` | Memory gate: while the number of open tabs of `kinds` (across all sessions) is ≤ this, they stay mounted; above it, keep-alive turns **off for all of `kinds`** until the count drops back. `0` disables the gate (always keep-mounted). |
 | `scrollback` | `null` | Client-side xterm buffer cap. `null`/empty keeps whatever DSH chose (default `1000`); a positive number overrides it per running terminal. Lower values cut repaint/memory on switch-back and scrolling, at the cost of shorter in-browser history. |
 | `smoothScrollDuration` | `0` | Scroll animation length in ms. `0` is xterm's default (instant jump); a value like `80–150` animates wheel scrolling for a smoother, VSCode-like feel. |
-| `webgl` | `false` | **Experimental.** `true` swaps each running terminal's DOM renderer for the GPU (WebGL) renderer (vendored `@xterm/addon-webgl`). This is the only real fix for the per-frame DOM redraw cost behind unsmooth scrolling. Default off; auto-falls back to DOM on context loss / no GPU / load failure, soft-capped at 8 contexts. Restart DSH after changing. |
+| `webgl` | `false` | **Experimental.** `true` swaps each running terminal's DOM renderer for the GPU (WebGL) renderer (vendored `@xterm/addon-webgl`). This is the only real fix for the per-frame DOM redraw cost behind unsmooth scrolling. Default off; auto-falls back to DOM on context loss / no GPU / load failure, soft-capped at ≥8 contexts (see `maxWebgl`). Applies live — enabling loads the renderer chunk immediately. |
 | `maxWebgl` | `null` | WebGL context cap. Empty follows `maxOpenTabs` (minimum 8), so every kept-mounted terminal can use the GPU renderer; a number sets it explicitly. Only gates new attachments (lowering does not evict). Only when `webgl` is on. |
 | `webglVisibleOnly` | `false` | Opt-in: attach WebGL only to the currently visible terminal and release it when hidden. Saves GPU memory/contexts when many terminals are open; small re-init hitch on switch. Off keeps the always-attached, smoothest-switch behaviour. |
 
@@ -67,7 +80,7 @@ then reload the page (Ctrl/Cmd+R) or restart DSH.
 
 ## How it works
 
-The DSH right-sidebar tab registry stores each tab type's definition object. `keepMounted` is read from that object when the dock decides whether to keep a tab body mounted, and that same flag also drives session-view retention (`retainTab`).
+The DSH right-sidebar tab registry stores each tab type's definition object. `keepMounted` is read from that object when the dock decides whether to keep a tab body mounted.
 
 `client.js` (a client-side Cordis plugin) obtains the `sidebarRightTabs` service and:
 
@@ -75,13 +88,14 @@ The DSH right-sidebar tab registry stores each tab type's definition object. `ke
 2. forces already-registered definitions through `get(kind)` on apply;
 3. re-runs on registry `subscribe` events (event-driven, no polling);
 4. subscribes to `sidebarRight.openTabs` and reconciles the memory gate whenever the open-tab set changes;
-5. emits one `console.warn` after 3s if a configured kind never appears, so a DSH API change fails loudly instead of silently.
+5. emits one `console.warn` after 3s if a configured kind never appears, so a DSH API change fails loudly instead of silently;
+6. registers the **Settings → 终端常驻** page (via `settings.section` + a nav icon) and re-applies the config immediately on save/reset/import (`requestReconcile` → `reconcile`).
 
 Turning keep-alive off (gate) sets `keepMounted = false` and calls the registry's `refresh()` so already-rendered tabs re-read the flag and release their bodies; turning it back on restores `true`. On plugin unload every definition is put back the way its own plugin registered it.
 
 ### Live terminal tuning + optional WebGL renderer
 
-Later versions tune each **running** terminal live, without restarting DSH: the client reaches the live xterm instance through the DOM (an `.xterm` node's React fiber → the `Terminal` ref) and sets `scrollback` / `smoothScrollDuration` on it. The optional **WebGL renderer** uses the same bridge: it lazily loads the bundled `@xterm/addon-webgl` chunk (`require.async("./client.webgl.js")`) and calls `term.loadAddon(new WebglAddon())`, replacing the DOM renderer with the GPU renderer — the real fix for the per-frame full-viewport DOM redraw behind unsmooth scrolling. It auto-falls back to DOM on context loss / no WebGL2 / load failure, caps concurrent contexts (`maxWebgl`, following `maxOpenTabs`, minimum 8), releases a terminal's context when it closes, and can be limited to the visible terminal (`webglVisibleOnly`). All of this is opt-in from the settings card and defaults to "no change".
+Later versions tune each **running** terminal live, without restarting DSH: the client reaches the live xterm instance through the DOM (an `.xterm` node's React fiber → the `Terminal` ref) and sets `scrollback` / `smoothScrollDuration` on it. The optional **WebGL renderer** uses the same bridge: it lazily loads the bundled `@xterm/addon-webgl` chunk (`require.async("./client.webgl.js")`) and calls `term.loadAddon(new WebglAddon())`, replacing the DOM renderer with the GPU renderer — the real fix for the per-frame full-viewport DOM redraw behind unsmooth scrolling. It auto-falls back to DOM on context loss / no WebGL2 / load failure, caps concurrent contexts (`maxWebgl`, following `maxOpenTabs`, minimum 8), releases a terminal's context when it closes, and can be limited to the visible terminal (`webglVisibleOnly`). All of this is opt-in from the settings page and defaults to "no change".
 
 ## Compatibility
 
@@ -99,8 +113,9 @@ It relies on the client service `sidebarRightTabs` (`register`, `get`, `subscrib
 3. Switch session and back.
 4. Open and close a terminal normally.
 5. DevTools console: no `[dsh-terminal-keepalive]` warnings.
-6. If broken: confirm `sidebarRightTabs`, `keepMounted` and `sidebarRight.openTabs` still exist; adjust the config or the API in `client.js`.
-7. Memory gate: open more than `maxOpenTabs` terminals of the configured kinds → switching away now reloads them (keep-alive off); close back below the limit → keep-alive returns.
+6. If **`webgl`** is enabled: the console logs `[dsh-terminal-keepalive] WebGL renderer active` once, `__dshTerminalKeepalive.webglStatus()` reports `supported: true` with `attached` ≥ 1 and the expected `cap`, and there are no repeated WebGL warnings.
+7. If broken: confirm `sidebarRightTabs`, `keepMounted` and `sidebarRight.openTabs` still exist; adjust the config or the API in `client.js`.
+8. Memory gate: open more than `maxOpenTabs` terminals of the configured kinds → switching away now reloads them (keep-alive off); close back below the limit → keep-alive returns.
 
 ## Reducing remaining jank
 

@@ -175,6 +175,17 @@ window.__ModuleLoader__.load({
           setSaved(true);
         } catch (e) {}
       }
+      function copyDiagnostics() {
+        try {
+          var st = null;
+          try { if (typeof window !== 'undefined' && window.__dshTerminalKeepalive && typeof window.__dshTerminalKeepalive.webglStatus === 'function') st = window.__dshTerminalKeepalive.webglStatus(); } catch (e) {}
+          var info = { plugin: 'dsh-terminal-keepalive', config: readConfig(), webgl: st, ua: (typeof navigator !== 'undefined' ? navigator.userAgent : ''), ts: new Date().toISOString() };
+          var json = JSON.stringify(info, null, 2);
+          if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) { try { navigator.clipboard.writeText(json); } catch (e) {} }
+          try { console.info('[dsh-terminal-keepalive] diagnostics:', info); } catch (e) {}
+          setSaved(true);
+        } catch (e) {}
+      }
 
       var status = null;
       try { if (typeof window !== 'undefined' && window.__dshTerminalKeepalive && typeof window.__dshTerminalKeepalive.webglStatus === 'function') status = window.__dshTerminalKeepalive.webglStatus(); } catch (e) {}
@@ -254,6 +265,7 @@ window.__ModuleLoader__.load({
           h('button', { type: 'button', onClick: applyRecommended, style: { padding: '6px 16px', fontSize: '13px', borderRadius: '6px', cursor: 'pointer', color: 'var(--dsw-alias-label-primary)', background: 'var(--dsw-alias-bg-layer-1)', border: '0.5px solid var(--dsw-alias-border-l3)' } }, '一键推荐'),
           h('button', { type: 'button', onClick: copyConfig, style: { padding: '6px 16px', fontSize: '13px', borderRadius: '6px', cursor: 'pointer', color: 'var(--dsw-alias-label-primary)', background: 'transparent', border: '0.5px solid var(--dsw-alias-border-l3)' } }, '复制配置'),
           h('button', { type: 'button', onClick: importConfig, style: { padding: '6px 16px', fontSize: '13px', borderRadius: '6px', cursor: 'pointer', color: 'var(--dsw-alias-label-primary)', background: 'transparent', border: '0.5px solid var(--dsw-alias-border-l3)' } }, '粘贴导入'),
+          h('button', { type: 'button', onClick: copyDiagnostics, style: { padding: '6px 16px', fontSize: '13px', borderRadius: '6px', cursor: 'pointer', color: 'var(--dsw-alias-label-primary)', background: 'transparent', border: '0.5px solid var(--dsw-alias-border-l3)' } }, '复制诊断'),
           h('button', { type: 'button', onClick: reset, style: { padding: '6px 16px', fontSize: '13px', borderRadius: '6px', cursor: 'pointer', color: 'var(--dsw-alias-label-primary)', background: 'transparent', border: '0.5px solid var(--dsw-alias-border-l3)' } }, '恢复默认'),
           saved ? h('span', { style: muted }, '已保存，立即生效') : null));
     }
