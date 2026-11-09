@@ -23,6 +23,8 @@ window.__ModuleLoader__.load({
     function readConfig() {
       var kinds = DEFAULT_KINDS.slice();
       var maxOpenTabs = DEFAULT_MAX_OPEN_TABS;
+      var scrollback = null; // null = leave whatever DSH/Host chose (do not override)
+      var smoothScrollDuration = 0; // 0 = instant scroll (xterm default)
       try {
         var raw = typeof window !== 'undefined' && window.localStorage ? window.localStorage.getItem(CONFIG_KEY) : null;
         if (raw) {
@@ -39,12 +41,20 @@ window.__ModuleLoader__.load({
             if (typeof parsed.maxOpenTabs === 'number' && isFinite(parsed.maxOpenTabs) && parsed.maxOpenTabs >= 0) {
               maxOpenTabs = Math.floor(parsed.maxOpenTabs);
             }
+            // Client-side terminal buffer cap. >0 overrides xterm's scrollback; null keeps DSH's value.
+            if (typeof parsed.scrollback === 'number' && isFinite(parsed.scrollback) && parsed.scrollback > 0) {
+              scrollback = Math.floor(parsed.scrollback);
+            }
+            // Smooth-scroll animation length in ms. 0 disables it (xterm default).
+            if (typeof parsed.smoothScrollDuration === 'number' && isFinite(parsed.smoothScrollDuration) && parsed.smoothScrollDuration >= 0) {
+              smoothScrollDuration = Math.floor(parsed.smoothScrollDuration);
+            }
           }
         }
       } catch (e) {
         // malformed config -> defaults
       }
-      return { kinds: kinds, maxOpenTabs: maxOpenTabs };
+      return { kinds: kinds, maxOpenTabs: maxOpenTabs, scrollback: scrollback, smoothScrollDuration: smoothScrollDuration };
     }
 
     // Seed the default config once so it is discoverable (DevTools -> Application ->
@@ -55,7 +65,9 @@ window.__ModuleLoader__.load({
         if (window.localStorage.getItem(CONFIG_KEY) === null) {
           window.localStorage.setItem(CONFIG_KEY, JSON.stringify({
             kinds: DEFAULT_KINDS.slice(),
-            maxOpenTabs: DEFAULT_MAX_OPEN_TABS
+            maxOpenTabs: DEFAULT_MAX_OPEN_TABS,
+            scrollback: null,
+            smoothScrollDuration: 0
           }));
         }
       } catch (e) {}
@@ -67,8 +79,17 @@ window.__ModuleLoader__.load({
         var kinds = Array.isArray(next.kinds) ? next.kinds.filter(function (k) { return typeof k === 'string' && k.length > 0; }) : [];
         var max = typeof next.maxOpenTabs === 'number' && isFinite(next.maxOpenTabs) && next.maxOpenTabs >= 0
           ? Math.floor(next.maxOpenTabs) : DEFAULT_MAX_OPEN_TABS;
+        var scrollback = typeof next.scrollback === 'number' && isFinite(next.scrollback) && next.scrollback > 0
+          ? Math.floor(next.scrollback) : null;
+        var smooth = typeof next.smoothScrollDuration === 'number' && isFinite(next.smoothScrollDuration) && next.smoothScrollDuration >= 0
+          ? Math.floor(next.smoothScrollDuration) : 0;
         if (typeof window !== 'undefined' && window.localStorage) {
-          window.localStorage.setItem(CONFIG_KEY, JSON.stringify({ kinds: kinds, maxOpenTabs: max }));
+          window.localStorage.setItem(CONFIG_KEY, JSON.stringify({
+            kinds: kinds,
+            maxOpenTabs: max,
+            scrollback: scrollback,
+            smoothScrollDuration: smooth
+          }));
         }
       } catch (e) {}
     }
@@ -90,6 +111,12 @@ window.__ModuleLoader__.load({
       var savedState = React.useState(false);
       var saved = savedState[0];
       var setSaved = savedState[1];
+      var sbState = React.useState(initial.scrollback == null ? '' : String(initial.scrollback));
+      var sbText = sbState[0];
+      var setSbText = sbState[1];
+      var smoothState = React.useState(String(initial.smoothScrollDuration || 0));
+      var smoothText = smoothState[0];
+      var setSmoothText = smoothState[1];
 
       var allKinds = DEFAULT_KINDS.slice();
       var known = ['terminal', 'files', 'text', 'browser'];
@@ -110,13 +137,22 @@ window.__ModuleLoader__.load({
       function save() {
         var max = parseInt(maxText, 10);
         if (!isFinite(max) || max < 0) max = 0;
-        writeConfig({ kinds: kinds, maxOpenTabs: max });
+        var sb = parseInt(sbText, 10);
+        if (!isFinite(sb) || sb <= 0) sb = null; // empty / 0 -> keep DSH's scrollback
+        var smooth = parseInt(smoothText, 10);
+        if (!isFinite(smooth) || smooth < 0) smooth = 0;
+        writeConfig({ kinds: kinds, maxOpenTabs: max, scrollback: sb, smoothScrollDuration: smooth });
         try { if (props && typeof props.onConfigChanged === 'function') props.onConfigChanged(); } catch (e) {}
         setSaved(true);
       }
 
       var muted = { fontSize: '12px', color: 'var(--dsw-alias-label-tertiary)' };
       var label = { fontSize: '13px', color: 'var(--dsw-alias-label-primary)', fontWeight: 500 };
+      var numStyle = {
+        padding: '6px 10px', fontSize: '13px', borderRadius: '6px', boxSizing: 'border-box', width: '160px',
+        color: 'var(--dsw-alias-label-primary)', background: 'var(--dsw-alias-bg-layer-1)',
+        border: '0.5px solid var(--dsw-alias-border-l3)', outline: 'none'
+      };
 
       var boxes = allKinds.map(function (kind) {
         return h('label', {
@@ -148,6 +184,28 @@ window.__ModuleLoader__.load({
             }
           }),
           h('div', { style: muted }, '同一次打开的这些类型标签数超过此值时，整类不再常驻（回退到切走卸载）；0 表示不设门槛。')),
+        h('div', { style: { display: 'flex', flexDirection: 'column', gap: '6px', maxWidth: '360px' } },
+          h('label', { style: label }, '终端历史行数（scrollback）'),
+          h('input', {
+            type: 'number',
+            min: 0,
+            placeholder: '留空=跟随官方（默认 1000）',
+            value: sbText,
+            onChange: function (e) { setSbText(e.target.value); setSaved(false); },
+            style: numStyle
+          }),
+          h('div', { style: muted }, '仅影响浏览器里 xterm 的显示缓冲上限；调小可降低切回/滚动时的重绘与内存。留空表示沿用官方的 scrollback。')),
+        h('div', { style: { display: 'flex', flexDirection: 'column', gap: '6px', maxWidth: '360px' } },
+          h('label', { style: label }, '平滑滚动时长（毫秒）'),
+          h('input', {
+            type: 'number',
+            min: 0,
+            placeholder: '0 = 关闭（瞬间跳变）',
+            value: smoothText,
+            onChange: function (e) { setSmoothText(e.target.value); setSaved(false); },
+            style: numStyle
+          }),
+          h('div', { style: muted }, '给终端的滚动加动画，接近 VSCode 的丝滑手感；建议 80–150。0 表示关闭（xterm 默认）。')),
         h('div', { style: { display: 'flex', alignItems: 'center', gap: '12px' } },
           h('button', {
             type: 'button',
@@ -159,6 +217,156 @@ window.__ModuleLoader__.load({
             }
           }, '保存'),
           saved ? h('span', { style: muted }, '已保存，立即生效') : null));
+    }
+
+    // Live tuning of already-running xterm instances.
+    //
+    // The official terminal builds `new Terminal({...})` inside a lazy chunk and
+    // exposes no service handle to it, so the only no-asar way to change a live
+    // terminal's options is to reach the instance through the DOM. Each xterm
+    // renders a `.xterm` node whose parent is the React element that owns the
+    // terminal ref; walking that React fiber to the hook holding the Terminal
+    // gives us the instance. Everything is guarded: if the internal shape ever
+    // changes, tuning silently becomes a no-op instead of breaking boot.
+    function createTerminalTuner() {
+      var originals = typeof WeakMap === 'function' ? new WeakMap() : null; // terminal -> { scrollback }
+      var elementToTerm = typeof WeakMap === 'function' ? new WeakMap() : null; // .xterm element -> terminal
+      var observer = null;
+      var warnedNoResolve = false;
+      var noop = { refresh: function () {}, dispose: function () {} };
+      try {
+        if (typeof document === 'undefined' || !document.querySelectorAll || !originals || !elementToTerm) return noop;
+
+        function fiberOf(node) {
+          try {
+            var keys = Object.getOwnPropertyNames(node);
+            for (var i = 0; i < keys.length; i++) {
+              if (keys[i].indexOf('__reactFiber$') === 0 || keys[i].indexOf('__reactInternalInstance$') === 0) {
+                return node[keys[i]];
+              }
+            }
+          } catch (e) {}
+          return null;
+        }
+
+        function looksLikeTerminal(value) {
+          return !!value && typeof value === 'object'
+            && typeof value.write === 'function'
+            && typeof value.resize === 'function'
+            && typeof value.dispose === 'function'
+            && value.options && typeof value.options === 'object';
+        }
+
+        // Walk up the fiber tree from the React host node that wraps `.xterm`,
+        // scanning each component's hook list for a ref whose `.current` is the
+        // xterm Terminal.
+        function findTerminal(xtermEl) {
+          try {
+            var host = xtermEl && xtermEl.parentElement;
+            if (!host) return null;
+            var fiber = fiberOf(host);
+            var depth = 0;
+            while (fiber && depth++ < 40) {
+              var hook = fiber.memoizedState;
+              var hop = 0;
+              while (hook && hop++ < 80) {
+                var ms = hook.memoizedState;
+                if (ms && typeof ms === 'object') {
+                  var current = ms.current;
+                  if (looksLikeTerminal(current)) return current;
+                }
+                hook = hook.next;
+              }
+              fiber = fiber.return;
+            }
+          } catch (e) {}
+          return null;
+        }
+
+        function tune(term, cfg) {
+          try {
+            var opts = term.options;
+            if (!opts || typeof opts !== 'object') return;
+            if (!originals.has(term)) originals.set(term, { scrollback: opts.scrollback });
+            var orig = originals.get(term);
+            // Smooth scroll: >0 animates, 0 = xterm default (instant).
+            var wantSmooth = cfg.smoothScrollDuration > 0 ? cfg.smoothScrollDuration : 0;
+            if (opts.smoothScrollDuration !== wantSmooth) {
+              try { opts.smoothScrollDuration = wantSmooth; } catch (e) {}
+            }
+            // Scrollback: override only when configured; otherwise restore DSH's value.
+            var wantSb = cfg.scrollback > 0 ? cfg.scrollback : (orig ? orig.scrollback : undefined);
+            if (typeof wantSb === 'number' && opts.scrollback !== wantSb) {
+              try { opts.scrollback = wantSb; } catch (e) {}
+            }
+          } catch (e) {}
+        }
+
+        // Resolve (once, cached) and tune a single `.xterm` element.
+        function tuneElement(el, cfg) {
+          try {
+            var term = elementToTerm.get(el);
+            if (!term) {
+              term = findTerminal(el);
+              if (!term) return false;
+              elementToTerm.set(el, term);
+            }
+            tune(term, cfg);
+            return true;
+          } catch (e) { return false; }
+        }
+
+        // Full pass over every terminal element (startup + config change). Cheap:
+        // tuneElement caches the instance so repeated passes don't re-walk fibers.
+        function scan() {
+          var cfg = readConfig();
+          var nodes;
+          try { nodes = document.querySelectorAll('.xterm'); } catch (e) { return; }
+          var resolved = 0;
+          for (var i = 0; i < nodes.length; i++) {
+            if (tuneElement(nodes[i], cfg)) resolved++;
+          }
+          // If the user asked for tuning but we can see terminals yet resolved none,
+          // the internal React shape likely changed. Warn once, never repeatedly.
+          if (!warnedNoResolve && nodes.length > 0 && resolved === 0
+              && (cfg.scrollback > 0 || cfg.smoothScrollDuration > 0)) {
+            warnedNoResolve = true;
+            try { console.warn(LOG, 'terminal tuning: found .xterm but could not resolve its instance; DSH internals may have changed.'); } catch (e) {}
+          }
+        }
+
+        // Only inspect nodes ADDED to the DOM: a terminal opens by appending its
+        // `.xterm` element once, so ongoing output (mutations *inside* `.xterm`)
+        // never re-triggers tuning — the observer stays off the hot path.
+        function tuneWithin(node, cfg) {
+          try {
+            if (!node || node.nodeType !== 1) return;
+            if (node.classList && node.classList.contains('xterm')) tuneElement(node, cfg);
+            var inner = node.querySelectorAll ? node.querySelectorAll('.xterm') : null;
+            if (inner) for (var i = 0; i < inner.length; i++) tuneElement(inner[i], cfg);
+          } catch (e) {}
+        }
+
+        try {
+          observer = new MutationObserver(function (records) {
+            var cfg = readConfig();
+            for (var r = 0; r < records.length; r++) {
+              var added = records[r].addedNodes;
+              for (var a = 0; a < added.length; a++) tuneWithin(added[a], cfg);
+            }
+          });
+          observer.observe(document.documentElement || document.body || document, { childList: true, subtree: true });
+        } catch (e) {
+          observer = null;
+        }
+        scan();
+        return {
+          refresh: function () { try { scan(); } catch (e) {} },
+          dispose: function () { try { if (observer) observer.disconnect(); } catch (e) {} },
+        };
+      } catch (e) {
+        return noop;
+      }
     }
 
     return {
@@ -183,6 +391,7 @@ window.__ModuleLoader__.load({
 
           var managed = []; // definitions whose keepMounted we may have changed
           var configuredKinds = []; // kinds we drove on the previous reconcile pass
+          var tuner = null; // live xterm option tuner (scrollback / smooth scroll)
 
           function remember(def) {
             if (def[ORIG] === undefined) {
@@ -278,6 +487,8 @@ window.__ModuleLoader__.load({
             if (changed && typeof svc.refresh === 'function') {
               try { svc.refresh(); } catch (e) {}
             }
+            // Re-apply the client-side terminal options in case they changed.
+            try { if (tuner) tuner.refresh(); } catch (e) {}
             return { cfg: cfg, enabled: enabled };
           }
 
@@ -352,6 +563,17 @@ window.__ModuleLoader__.load({
             }
           } catch (e) {
             unsubTabs = undefined;
+          }
+
+          // Live-tune running xterm instances (client-side scrollback / smooth scroll).
+          // A guarded DOM bridge into the official terminal; a no-op if its internals differ.
+          try {
+            ctx.effect(function () {
+              tuner = createTerminalTuner();
+              return function () { try { if (tuner) tuner.dispose(); } catch (e) {} };
+            });
+          } catch (e) {
+            tuner = null;
           }
 
           // Settings UI: a config card on this bundle's own page in Settings -> Plugins.

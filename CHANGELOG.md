@@ -1,12 +1,15 @@
 # Changelog
 
-## Unreleased
+## 0.4.0
 
+- **Live terminal tuning.** The settings card now also exposes two client-side xterm options, applied to already-running terminals (and to new ones) without a restart:
+  - `scrollback` — the browser-side terminal buffer cap. Lower it to cut repaint/memory cost when switching back or scrolling. Leave empty to keep DSH's value (default 1000).
+  - `smoothScrollDuration` — scroll animation in ms (`0` = off, the xterm default). A value like `80–150` gives VSCode-like smooth wheel scrolling.
+- Applied through a guarded DOM bridge that recovers the live xterm `Terminal` from the React fiber of each `.xterm` node; if the official internals differ it silently no-ops (with a one-shot console warning) instead of breaking boot. Both options default to "no change".
+- Config schema grows to `{ kinds, maxOpenTabs, scrollback, smoothScrollDuration }` in `localStorage['dsh-terminal-keepalive.config']`.
 - Add CI (`.github/workflows/ci.yml`): `node --check` + `node --test` on push/PR.
-- Add ModuleLoader-simulated unit tests (`test/client.test.cjs`) covering config, memory gate, settings-card registration and dispose restore.
+- Add ModuleLoader-simulated unit tests (`test/client.test.cjs`) covering config, memory gate, settings-card registration, dispose restore, and the live terminal tuner.
 - Add GitHub issue templates (bug report, feature request).
-- README: add a Development section and CI badge (README is English).
-- Docs: P4 (upstream issue/PR) dropped — the official repo has no issue tracker and omitting `keepMounted` is a deliberate memory trade-off; document tuning `terminal-controller` `scrollback`/`maxBufferedBytes` as the lever for remaining jank.
 
 ## 0.3.0
 

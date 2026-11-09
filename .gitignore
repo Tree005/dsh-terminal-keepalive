@@ -5,3 +5,6 @@ node_modules/
 
 # Local-only agent handoff — not for the public repo
 AGENTS.md
+
+# Scratch: unpacked app.asar inspection (terminal/xterm source), local only
+.inspect/

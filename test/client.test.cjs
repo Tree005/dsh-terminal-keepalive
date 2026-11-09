@@ -192,3 +192,66 @@ test('dispose restores original keepMounted', () => {
   env.dispose();
   assert.ok(!('keepMounted' in def));
 });
+
+// --- live terminal option tuner (client-side scrollback / smooth scroll) ---
+
+function makeFakeTerminal(initial) {
+  const options = Object.assign({ scrollback: 1000, smoothScrollDuration: 0 }, initial || {});
+  return { options, write() {}, resize() {}, dispose() {}, element: {} };
+}
+
+function makeXtermElement(term) {
+  // Simulate React's fiber on the host `.screen` div: a hook list whose ref
+  // holds the terminal. `findTerminal` walks this to recover the instance.
+  const termHook = { memoizedState: { current: term }, next: null };
+  const elHook = { memoizedState: { current: {} }, next: termHook };
+  const fiber = { memoizedState: elHook, return: null };
+  const host = {};
+  host['__reactFiber$test'] = fiber;
+  return { parentElement: host, className: 'xterm' };
+}
+
+function withFakeDocument(elements, fn) {
+  const prevDoc = global.document;
+  const prevMO = global.MutationObserver;
+  global.document = {
+    documentElement: {},
+    body: {},
+    querySelectorAll: (sel) => (sel === '.xterm' ? elements : []),
+  };
+  global.MutationObserver = class { constructor() {} observe() {} disconnect() {} };
+  try { return fn(); } finally {
+    global.document = prevDoc;
+    global.MutationObserver = prevMO;
+  }
+}
+
+test('tuner applies scrollback + smoothScrollDuration to a running terminal', () => {
+  const term = makeFakeTerminal();
+  const xtermEl = makeXtermElement(term);
+  withFakeDocument([xtermEl], () => {
+    const env = setup({ config: { kinds: ['terminal'], scrollback: 300, smoothScrollDuration: 120 } });
+    try {
+      assert.strictEqual(term.options.scrollback, 300);
+      assert.strictEqual(term.options.smoothScrollDuration, 120);
+    } finally { env.dispose(); }
+  });
+});
+
+test('tuner restores the original scrollback when the setting is cleared', () => {
+  const term = makeFakeTerminal({ scrollback: 1000 });
+  const xtermEl = makeXtermElement(term);
+  withFakeDocument([xtermEl], () => {
+    const env = setup({ config: { kinds: ['terminal'], scrollback: 300, smoothScrollDuration: 0 } });
+    try {
+      assert.strictEqual(term.options.scrollback, 300);
+      const card = env.slots._regs.find((r) => r.opts.name === 'plugins.bundle.config');
+      const injected = card.opts.inject();
+      // Clear scrollback (null) and save -> reconcile -> tuner.refresh restores DSH's 1000.
+      window.localStorage.setItem(CONFIG_KEY, JSON.stringify({ kinds: ['terminal'], maxOpenTabs: 6, scrollback: null, smoothScrollDuration: 0 }));
+      injected.onConfigChanged();
+      assert.strictEqual(term.options.scrollback, 1000);
+    } finally { env.dispose(); }
+  });
+});
+

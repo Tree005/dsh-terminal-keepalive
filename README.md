@@ -37,7 +37,7 @@ Restart DSH after installing.
 
 ## Configuration
 
-**Via the GUI (easiest):** open **Settings → Plugins → 终端常驻（右栏）** and use the config card there — check the tab kinds to keep mounted and set `maxOpenTabs`. It writes the config below and applies immediately, no restart.
+**Via the GUI (easiest):** open **Settings → Plugins → 终端常驻（右栏）** and use the config card there — check the tab kinds to keep mounted, set `maxOpenTabs`, and optionally set the terminal `scrollback` and `smoothScrollDuration`. It writes the config below and applies immediately, no restart.
 
 **Manually:** the config is a JSON object in `localStorage` under the key **`dsh-terminal-keepalive.config`**; the plugin writes a default on first run, so you can just edit it:
 
@@ -46,7 +46,9 @@ DevTools → Console:
   JSON.parse(localStorage.getItem('dsh-terminal-keepalive.config'))
   localStorage.setItem('dsh-terminal-keepalive.config', JSON.stringify({
     kinds: ['terminal', 'files', 'text'],  // tab kinds to keep mounted
-    maxOpenTabs: 6                         // memory ceiling (see below)
+    maxOpenTabs: 6,                        // memory ceiling (see below)
+    scrollback: null,                      // null = keep DSH's value; e.g. 300 to trim the browser buffer
+    smoothScrollDuration: 0                // ms; 0 = off; ~80–150 for VSCode-like smooth scrolling
   }))
 then reload the page (Ctrl/Cmd+R) or restart DSH.
 ```
@@ -55,6 +57,8 @@ then reload the page (Ctrl/Cmd+R) or restart DSH.
 |---|---|---|
 | `kinds` | `["terminal"]` | Tab kinds to keep mounted. Known kinds shipped by DSH: `terminal`, `files`, `text`, `browser`, `guide`. An empty list keeps nothing mounted (plugin effectively off). |
 | `maxOpenTabs` | `6` | Memory gate: while the number of open tabs of `kinds` (across all sessions) is ≤ this, they stay mounted; above it, keep-alive turns **off for all of `kinds`** until the count drops back. `0` disables the gate (always keep-mounted). |
+| `scrollback` | `null` | Client-side xterm buffer cap. `null`/empty keeps whatever DSH chose (default `1000`); a positive number overrides it per running terminal. Lower values cut repaint/memory on switch-back and scrolling, at the cost of shorter in-browser history. |
+| `smoothScrollDuration` | `0` | Scroll animation length in ms. `0` is xterm's default (instant jump); a value like `80–150` animates wheel scrolling for a smoother, VSCode-like feel. |
 
 **Why `keepMounted` is a global on/off, not a per-tab count.** The sidebar exposes `keepMounted` only as a per-kind boolean, read as `types.find(t => t.kind === tab.kind)?.keepMounted === true`. It cannot distinguish the 1st terminal tab from the 7th, so a per-instance cap is not expressible through the public API; the gate instead flips the whole kind when the total exceeds `maxOpenTabs`. A precise per-instance cap would need an upstream dockkit change.
 
@@ -107,6 +111,8 @@ The cheapest lever you control is the official terminal controller's buffer size
       scrollback: 300          # default 1000
       maxBufferedBytes: 1048576 # default 2097152
 ```
+
+The plugin's own **`scrollback`** and **`smoothScrollDuration`** settings (see [Configuration](#configuration)) do the browser-side equivalent live, without a restart: `scrollback` trims the xterm buffer per running terminal, and `smoothScrollDuration` animates wheel scrolling. The Host-side headless parse is not affected by these two — only by re-mounting less (this plugin) and by the `terminal-controller` config above.
 
 Choosing a sane `maxOpenTabs` also keeps the number of live xterm instances bounded. Moving headless parsing off the main thread, or canvas/WebGL rendering, are changes inside the official renderer and out of scope for this zero-dependency client plugin.
 
