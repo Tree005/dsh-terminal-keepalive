@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.1
+
+- **WebGL robustness (no behaviour change by default).**
+  - Fixed context accounting: closing a terminal now releases its WebGL context (via the mutation observer's removed-node cleanup). Previously the 8-context cap could saturate after opening/closing a handful of terminals, after which new terminals silently stayed on the DOM renderer.
+  - The cap now counts **in-flight** loads too, so opening several terminals at once can't overshoot it.
+  - Added a one-time `webgl2` capability probe: on machines without WebGL2 the plugin warns once and stays on the DOM renderer instead of fetching/activating the addon.
+- Result: WebGL keeps working across long sessions with many open/closed terminals, and degrades cleanly where GPU/WebGL2 isn't available.
+
 ## 0.5.0
 
 - **Experimental WebGL renderer (opt-in).** New settings-card checkbox (`webgl`, default **off**): the plugin reaches each running terminal's xterm instance and swaps the DOM renderer for the GPU (WebGL) renderer — the only real fix for the per-frame full-viewport DOM redraw that makes scrolling feel non-smooth. Shipped as a vendored `@xterm/addon-webgl@0.19.0` package-local chunk (`client.webgl.js`, same monorepo commit as the inlined xterm 6.0.0) loaded lazily via `require.async("./client.webgl.js")`. Per-terminal `onContextLoss` falls back to DOM; a soft cap of 8 concurrent WebGL contexts; chunk-load / no-GPU failures warn once and stay on DOM. Default off → behaviour unchanged until enabled.

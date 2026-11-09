@@ -211,13 +211,15 @@ function makeXtermElement(term) {
   return { parentElement: host, className: 'xterm' };
 }
 
-function withFakeDocument(elements, fn) {
+function withFakeDocument(elements, fn, opts) {
   const prevDoc = global.document;
   const prevMO = global.MutationObserver;
+  const webgl2 = !(opts && opts.noWebgl);
   global.document = {
     documentElement: {},
     body: {},
     querySelectorAll: (sel) => (sel === '.xterm' ? elements : []),
+    createElement: () => ({ getContext: (t) => ((t === 'webgl2' && webgl2) ? {} : null) }),
   };
   global.MutationObserver = class { constructor() {} observe() {} disconnect() {} };
   try { return fn(); } finally {
@@ -303,6 +305,35 @@ test('webgl on but chunk load fails: no addon, no throw', async () => {
   await tick();
   try {
     assert.strictEqual(term._addons.length, 0);
+  } finally { env.dispose(); }
+});
+
+test('webgl cap: at most 8 terminals get a context (attached + in-flight)', async () => {
+  const terms = [];
+  const els = [];
+  for (let i = 0; i < 10; i++) { const t = makeFakeTerminal(); terms.push(t); els.push(makeXtermElement(t)); }
+  let env;
+  const req = requireWithWebgl({ WebglAddon: FakeWebglAddon });
+  withFakeDocument(els, () => { env = setup({ config: { kinds: ['terminal'], webgl: true }, require: req }); });
+  await tick();
+  try {
+    const total = terms.reduce((n, t) => n + t._addons.length, 0);
+    assert.strictEqual(total, 8);
+  } finally { env.dispose(); }
+});
+
+test('webgl unsupported (no webgl2): chunk never loaded, stays on DOM', async () => {
+  const term = makeFakeTerminal();
+  const xtermEl = makeXtermElement(term);
+  let env;
+  let loaded = false;
+  const req = (name) => (name === 'react' ? fakeReact : {});
+  req.async = () => { loaded = true; return Promise.resolve({ WebglAddon: FakeWebglAddon }); };
+  withFakeDocument([xtermEl], () => { env = setup({ config: { kinds: ['terminal'], webgl: true }, require: req }); }, { noWebgl: true });
+  await tick();
+  try {
+    assert.strictEqual(term._addons.length, 0);
+    assert.strictEqual(loaded, false);
   } finally { env.dispose(); }
 });
 

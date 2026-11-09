@@ -247,12 +247,11 @@ window.__ModuleLoader__.load({
     function createTerminalTuner() {
       var originals = typeof WeakMap === 'function' ? new WeakMap() : null; // terminal -> { scrollback }
       var elementToTerm = typeof WeakMap === 'function' ? new WeakMap() : null; // .xterm element -> terminal
-      var webglAddons = typeof WeakMap === 'function' ? new WeakMap() : null; // terminal -> WebglAddon
+      var webglAddons = typeof Map === 'function' ? new Map() : null; // terminal -> WebglAddon (live)
       var webglLoading = typeof Set === 'function' ? new Set() : null;
-      var webglInstances = []; // addons to dispose on unload
-      var webglCount = 0;
       var WEBGL_MAX = 8; // per-page WebGL context soft cap (browser limit is ~16)
       var webglWarned = false;
+      var webglSupported; // undefined = unprobed; true/false after probing webgl2
       var observer = null;
       var warnedNoResolve = false;
       var noop = { refresh: function () {}, dispose: function () {} };
@@ -327,24 +326,44 @@ window.__ModuleLoader__.load({
 
         // Experimental GPU renderer: lazily load the vendored @xterm/addon-webgl chunk and
         // attach it to this live terminal. Default off; falls back to DOM on any failure or
-        // WebGL context loss. Only the first WEBGL_MAX terminals get a context.
+        // WebGL context loss. Contexts are capped at WEBGL_MAX and released when a terminal
+        // is removed, so opening/closing many terminals keeps working.
+        function hasWebgl2() {
+          try {
+            if (typeof document === 'undefined' || !document.createElement) return false;
+            var c = document.createElement('canvas');
+            return !!(c.getContext && c.getContext('webgl2'));
+          } catch (e) { return false; }
+        }
+
+        function disposeWebglFor(term) {
+          try {
+            if (!webglAddons) return;
+            if (webglLoading) webglLoading.delete(term);
+            var addon = webglAddons.get(term);
+            if (addon) {
+              try { addon.dispose(); } catch (e) {}
+              webglAddons.delete(term);
+            }
+          } catch (e) {}
+        }
+
         function maybeWebgl(term, cfg) {
           try {
             if (!webglAddons || !webglLoading) return;
-            var existing = webglAddons.get(term);
-            if (cfg.webgl !== true) {
-              if (existing) {
-                try { existing.dispose(); } catch (e) {}
-                webglAddons.delete(term);
-                webglCount = Math.max(0, webglCount - 1);
-              }
-              return;
+            if (cfg.webgl !== true) { disposeWebglFor(term); return; }
+            if (webglAddons.has(term) || webglLoading.has(term)) return;
+            if (webglAddons.size + webglLoading.size >= WEBGL_MAX) return; // cap counts attached + in-flight
+            if (webglSupported === false) return;
+            if (webglSupported === undefined) {
+              webglSupported = hasWebgl2();
+              if (!webglSupported) { webglWarnOnce('no WebGL2 available'); return; }
             }
-            if (existing || webglLoading.has(term) || webglCount >= WEBGL_MAX) return;
             if (typeof require === 'undefined' || !require || typeof require.async !== 'function') return;
             webglLoading.add(term);
             Promise.resolve(require.async('./client.webgl.js')).then(function (mod) {
               webglLoading.delete(term);
+              if (cfg.webgl !== true) return; // turned off while loading
               var Addon = mod && mod.WebglAddon;
               if (!Addon) { webglWarnOnce('chunk has no WebglAddon'); return; }
               try {
@@ -353,16 +372,13 @@ window.__ModuleLoader__.load({
                   try {
                     addon.onContextLoss(function () {
                       try { addon.dispose(); } catch (e) {}
-                      webglAddons.delete(term);
-                      webglCount = Math.max(0, webglCount - 1);
+                      try { webglAddons.delete(term); } catch (e) {}
                       webglWarnOnce('context lost; fell back to DOM');
                     });
                   } catch (e) {}
                 }
                 term.loadAddon(addon);
                 webglAddons.set(term, addon);
-                webglInstances.push(addon);
-                webglCount += 1;
               } catch (e) {
                 webglWarnOnce('activate failed: ' + (e && e.message));
               }
@@ -424,12 +440,28 @@ window.__ModuleLoader__.load({
           } catch (e) {}
         }
 
+        // A removed `.xterm` belongs to a closed terminal: release its WebGL context so the
+        // cap reflects only live terminals (otherwise we'd stop attaching after N closes).
+        function cleanupElement(el) {
+          try { var term = elementToTerm.get(el); if (term) disposeWebglFor(term); } catch (e) {}
+        }
+        function cleanupWithin(node) {
+          try {
+            if (!node || node.nodeType !== 1) return;
+            if (node.classList && node.classList.contains('xterm')) cleanupElement(node);
+            var inner = node.querySelectorAll ? node.querySelectorAll('.xterm') : null;
+            if (inner) for (var i = 0; i < inner.length; i++) cleanupElement(inner[i]);
+          } catch (e) {}
+        }
+
         try {
           observer = new MutationObserver(function (records) {
             var cfg = readConfig();
             for (var r = 0; r < records.length; r++) {
               var added = records[r].addedNodes;
               for (var a = 0; a < added.length; a++) tuneWithin(added[a], cfg);
+              var removed = records[r].removedNodes;
+              for (var m = 0; m < removed.length; m++) cleanupWithin(removed[m]);
             }
           });
           observer.observe(document.documentElement || document.body || document, { childList: true, subtree: true });
@@ -441,7 +473,7 @@ window.__ModuleLoader__.load({
           refresh: function () { try { scan(); } catch (e) {} },
           dispose: function () {
             try { if (observer) observer.disconnect(); } catch (e) {}
-            try { for (var i = 0; i < webglInstances.length; i++) { try { webglInstances[i].dispose(); } catch (e) {} } } catch (e) {}
+            try { if (webglAddons) { webglAddons.forEach(function (a) { try { a.dispose(); } catch (e) {} }); webglAddons.clear(); } } catch (e) {}
           },
         };
       } catch (e) {

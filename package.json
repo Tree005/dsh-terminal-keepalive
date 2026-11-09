@@ -1,6 +1,6 @@
 {
   "name": "dsh-terminal-keepalive",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "private": true,
   "description": "Keep the DSH right-sidebar terminal mounted across tab switches, with live terminal tuning (scrollback, smooth scroll, experimental WebGL renderer).",
   "keywords": ["dsh", "dsh-plugin", "terminal", "keepalive", "webgl"],
