@@ -12,7 +12,7 @@ This plugin flips that flag at runtime for the configured tab kinds (default: th
 
 - No second PTY, no custom xterm, no change to `app.asar`.
 - Keeps the official terminal implementation (official PTY, transport, theme, Agent terminal tools).
-- Zero runtime dependencies.
+- No external runtime dependency to install; the optional WebGL renderer ships `@xterm/addon-webgl` as a bundled chunk (`client.webgl.js`).
 
 ## Install
 
@@ -37,7 +37,7 @@ Restart DSH after installing.
 
 ## Configuration
 
-**Via the GUI (easiest):** open **Settings → Plugins → 终端常驻（右栏）** and use the config card there — check the tab kinds to keep mounted, set `maxOpenTabs`, and optionally set the terminal `scrollback` and `smoothScrollDuration`. It writes the config below and applies immediately, no restart.
+**Via the GUI (easiest):** open **Settings → Plugins → 终端常驻（右栏）** and use the config card there — check the tab kinds to keep mounted, set `maxOpenTabs`, and optionally set the terminal `scrollback`, `smoothScrollDuration`, and the experimental **WebGL renderer** (`webgl` + `maxWebgl` + `webglVisibleOnly`). It writes the config below and applies immediately, no restart (enabling WebGL loads the renderer chunk on the spot).
 
 **Manually:** the config is a JSON object in `localStorage` under the key **`dsh-terminal-keepalive.config`**; the plugin writes a default on first run, so you can just edit it:
 
@@ -79,6 +79,10 @@ The DSH right-sidebar tab registry stores each tab type's definition object. `ke
 
 Turning keep-alive off (gate) sets `keepMounted = false` and calls the registry's `refresh()` so already-rendered tabs re-read the flag and release their bodies; turning it back on restores `true`. On plugin unload every definition is put back the way its own plugin registered it.
 
+### Live terminal tuning + optional WebGL renderer
+
+Later versions tune each **running** terminal live, without restarting DSH: the client reaches the live xterm instance through the DOM (an `.xterm` node's React fiber → the `Terminal` ref) and sets `scrollback` / `smoothScrollDuration` on it. The optional **WebGL renderer** uses the same bridge: it lazily loads the bundled `@xterm/addon-webgl` chunk (`require.async("./client.webgl.js")`) and calls `term.loadAddon(new WebglAddon())`, replacing the DOM renderer with the GPU renderer — the real fix for the per-frame full-viewport DOM redraw behind unsmooth scrolling. It auto-falls back to DOM on context loss / no WebGL2 / load failure, caps concurrent contexts (`maxWebgl`, following `maxOpenTabs`, minimum 8), releases a terminal's context when it closes, and can be limited to the visible terminal (`webglVisibleOnly`). All of this is opt-in from the settings card and defaults to "no change".
+
 ## Compatibility
 
 | DSH | Status |
@@ -117,11 +121,13 @@ The cheapest lever you control is the official terminal controller's buffer size
 
 The plugin's own **`scrollback`** and **`smoothScrollDuration`** settings (see [Configuration](#configuration)) do the browser-side equivalent live, without a restart: `scrollback` trims the xterm buffer per running terminal, and `smoothScrollDuration` animates wheel scrolling. The Host-side headless parse is not affected by these two — only by re-mounting less (this plugin) and by the `terminal-controller` config above.
 
-Choosing a sane `maxOpenTabs` also keeps the number of live xterm instances bounded. Moving headless parsing off the main thread, or canvas/WebGL rendering, are changes inside the official renderer and out of scope for this zero-dependency client plugin.
+For the renderer cost itself, the **`webgl`** option swaps the DOM renderer for the GPU (WebGL) renderer ([details](#live-terminal-tuning--optional-webgl-renderer)) — this is the fix for the per-frame redraw cost behind "scrolling isn't smooth", especially while a full-screen TUI streams output.
+
+Choosing a sane `maxOpenTabs` also keeps the number of live xterm instances bounded. Moving headless parsing off the main thread is a change inside the official Host renderer and remains out of scope.
 
 ## Development
 
-Zero runtime dependencies; tests use Node's built-in runner and a simulated `ModuleLoader` (no browser/jsdom needed).
+No external runtime dependency to install; tests use Node's built-in runner and a simulated `ModuleLoader` (no browser/jsdom needed).
 
 ```sh
 node --check client.js
