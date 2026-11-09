@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.0
+
+- **Visual settings entry.** A config card now appears on the plugin's own page in **Settings → Plugins** (slot `plugins.bundle.config`, key `dsh-terminal-keepalive`): checkboxes for the tab kinds to keep mounted plus a `maxOpenTabs` number field. Saving writes the same localStorage config and applies immediately (no restart).
+- Keeps the localStorage-based runtime; the card and the keep-alive logic read/write the same `dsh-terminal-keepalive.config`.
+
 ## 0.2.0
 
 - **Configurable tab kinds.** `KINDS` is no longer hard-coded. A JSON config in `localStorage['dsh-terminal-keepalive.config']` now chooses `kinds` (e.g. `["terminal","files","text"]`), with a default written on first run.

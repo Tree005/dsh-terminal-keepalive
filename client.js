@@ -1,6 +1,8 @@
 window.__ModuleLoader__.load({
   id: 'dsh-terminal-keepalive',
   factory(require) {
+    var React = require('react');
+    var h = React.createElement;
     var LOG = '[dsh-terminal-keepalive]';
     // Runtime configuration lives in localStorage as JSON:
     //   { "kinds": ["terminal", "files", "text"], "maxOpenTabs": 6 }
@@ -59,8 +61,108 @@ window.__ModuleLoader__.load({
       } catch (e) {}
     }
 
+    // Write the JSON config back to localStorage (normalized). Used by the settings card.
+    function writeConfig(next) {
+      try {
+        var kinds = Array.isArray(next.kinds) ? next.kinds.filter(function (k) { return typeof k === 'string' && k.length > 0; }) : [];
+        var max = typeof next.maxOpenTabs === 'number' && isFinite(next.maxOpenTabs) && next.maxOpenTabs >= 0
+          ? Math.floor(next.maxOpenTabs) : DEFAULT_MAX_OPEN_TABS;
+        if (typeof window !== 'undefined' && window.localStorage) {
+          window.localStorage.setItem(CONFIG_KEY, JSON.stringify({ kinds: kinds, maxOpenTabs: max }));
+        }
+      } catch (e) {}
+    }
+
+    // Labels for the known tab kinds; unknown configured kinds still render so saving never drops them.
+    var KIND_LABELS = { terminal: '终端', files: '文件树', text: '文档预览', browser: '浏览器' };
+
+    // The settings card rendered on this bundle's page in Settings -> Plugins
+    // (slot `plugins.bundle.config`, keyed by the package name). Reads/writes the
+    // same localStorage config the keep-alive logic uses, and applies immediately.
+    function SettingsCard(props) {
+      var initial = readConfig();
+      var state = React.useState(initial.kinds);
+      var kinds = state[0];
+      var setKinds = state[1];
+      var maxState = React.useState(String(initial.maxOpenTabs));
+      var maxText = maxState[0];
+      var setMaxText = maxState[1];
+      var savedState = React.useState(false);
+      var saved = savedState[0];
+      var setSaved = savedState[1];
+
+      var allKinds = DEFAULT_KINDS.slice();
+      var known = ['terminal', 'files', 'text', 'browser'];
+      for (var i = 0; i < known.length; i++) if (allKinds.indexOf(known[i]) === -1) allKinds.push(known[i]);
+      for (var j = 0; j < kinds.length; j++) if (allKinds.indexOf(kinds[j]) === -1) allKinds.push(kinds[j]);
+
+      function toggle(kind) {
+        setSaved(false);
+        setKinds(function (prev) {
+          var idx = prev.indexOf(kind);
+          if (idx === -1) return prev.concat([kind]);
+          var next = prev.slice();
+          next.splice(idx, 1);
+          return next;
+        });
+      }
+
+      function save() {
+        var max = parseInt(maxText, 10);
+        if (!isFinite(max) || max < 0) max = 0;
+        writeConfig({ kinds: kinds, maxOpenTabs: max });
+        try { if (props && typeof props.onConfigChanged === 'function') props.onConfigChanged(); } catch (e) {}
+        setSaved(true);
+      }
+
+      var muted = { fontSize: '12px', color: 'var(--dsw-alias-label-tertiary)' };
+      var label = { fontSize: '13px', color: 'var(--dsw-alias-label-primary)', fontWeight: 500 };
+
+      var boxes = allKinds.map(function (kind) {
+        return h('label', {
+          key: kind,
+          style: { display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px', color: 'var(--dsw-alias-label-primary)' },
+        }, h('input', {
+          type: 'checkbox',
+          checked: kinds.indexOf(kind) !== -1,
+          onChange: function () { toggle(kind); },
+        }), kind + (KIND_LABELS[kind] ? '（' + KIND_LABELS[kind] + '）' : ''));
+      });
+
+      return h('div', { style: { display: 'flex', flexDirection: 'column', gap: '16px', padding: '4px 0' } },
+        h('div', { style: muted }, '选择切换 tab / 会话时需要保持挂载的标签类型，并设置常驻上限。改动保存后立即生效，无需重启。'),
+        h('div', { style: { display: 'flex', flexDirection: 'column', gap: '8px' } },
+          h('div', { style: label }, '常驻的标签类型'),
+          h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: '8px' } }, boxes)),
+        h('div', { style: { display: 'flex', flexDirection: 'column', gap: '6px', maxWidth: '320px' } },
+          h('label', { style: label }, '内存上限（maxOpenTabs）'),
+          h('input', {
+            type: 'number',
+            min: 0,
+            value: maxText,
+            onChange: function (e) { setMaxText(e.target.value); setSaved(false); },
+            style: {
+              padding: '6px 10px', fontSize: '13px', borderRadius: '6px', boxSizing: 'border-box',
+              color: 'var(--dsw-alias-label-primary)', background: 'var(--dsw-alias-bg-layer-1)',
+              border: '0.5px solid var(--dsw-alias-border-l3)', outline: 'none'
+            }
+          }),
+          h('div', { style: muted }, '同一次打开的这些类型标签数超过此值时，整类不再常驻（回退到切走卸载）；0 表示不设门槛。')),
+        h('div', { style: { display: 'flex', alignItems: 'center', gap: '12px' } },
+          h('button', {
+            type: 'button',
+            onClick: save,
+            style: {
+              padding: '6px 16px', fontSize: '13px', borderRadius: '6px', cursor: 'pointer',
+              color: 'var(--dsw-alias-label-primary)', background: 'var(--dsw-alias-bg-layer-1)',
+              border: '0.5px solid var(--dsw-alias-border-l3)'
+            }
+          }, '保存'),
+          saved ? h('span', { style: muted }, '已保存，立即生效') : null));
+    }
+
     return {
-      inject: ['sidebarRightTabs'],
+      inject: ['sidebarRightTabs', 'slots'],
       apply(ctx) {
         try {
           seedConfig();
@@ -250,6 +352,27 @@ window.__ModuleLoader__.load({
             }
           } catch (e) {
             unsubTabs = undefined;
+          }
+
+          // Settings UI: a config card on this bundle's own page in Settings -> Plugins.
+          // Registered lazily into the Plugins page's bundle-config slot, so a profile
+          // without the plugin manager simply never shows it.
+          try {
+            if (ctx.slots && typeof ctx.slots.inject === 'function' && typeof ctx.slots.register === 'function') {
+              ctx.effect(function () {
+                return ctx.slots.inject('plugins.bundle.config', function () {
+                  return ctx.slots.register({
+                    name: 'plugins.bundle.config',
+                    key: 'dsh-terminal-keepalive',
+                    inject: function () {
+                      return { onConfigChanged: function () { try { reconcile(); } catch (e) {} } };
+                    }
+                  }, SettingsCard);
+                });
+              });
+            }
+          } catch (e) {
+            try { console.warn(LOG, 'settings card unavailable:', e); } catch (x) {}
           }
 
           // One-shot diagnostic so a DSH API change fails loudly instead of silently.

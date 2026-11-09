@@ -35,7 +35,9 @@ Restart DSH after installing.
 
 ## Configuration
 
-Pick which tab kinds stay mounted and cap how much may stay resident. The config is a JSON object in `localStorage` under the key **`dsh-terminal-keepalive.config`**; the plugin writes a default on first run, so you can just edit it:
+**Via the GUI (easiest):** open **Settings → Plugins → 终端常驻（右栏）** and use the config card there — check the tab kinds to keep mounted and set `maxOpenTabs`. It writes the config below and applies immediately, no restart.
+
+**Manually:** the config is a JSON object in `localStorage` under the key **`dsh-terminal-keepalive.config`**; the plugin writes a default on first run, so you can just edit it:
 
 ```
 DevTools → Console:
