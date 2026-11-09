@@ -6,6 +6,7 @@
 - Add ModuleLoader-simulated unit tests (`test/client.test.cjs`) covering config, memory gate, settings-card registration and dispose restore.
 - Add GitHub issue templates (bug report, feature request).
 - README: add a Development section and CI badge (README is English).
+- Docs: P4 (upstream issue/PR) dropped — the official repo has no issue tracker and omitting `keepMounted` is a deliberate memory trade-off; document tuning `terminal-controller` `scrollback`/`maxBufferedBytes` as the lever for remaining jank.
 
 ## 0.3.0
 

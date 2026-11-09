@@ -91,6 +91,25 @@ It relies on the client service `sidebarRightTabs` (`register`, `get`, `subscrib
 6. If broken: confirm `sidebarRightTabs`, `keepMounted` and `sidebarRight.openTabs` still exist; adjust the config or the API in `client.js`.
 7. Memory gate: open more than `maxOpenTabs` terminals of the configured kinds → switching away now reloads them (keep-alive off); close back below the limit → keep-alive returns.
 
+## Reducing remaining jank
+
+Keep-alive removes the reload and snapshot replay when you switch back, but two costs live in the official terminal and remain:
+
+- the Host parses every stream through `@xterm/headless`, so heavy output costs CPU regardless of mounting;
+- xterm reflows on resize / when a hidden body becomes visible.
+
+The cheapest lever you control is the official terminal controller's buffer size. In your profile's `cordis.patch.yml`, shrink the `terminal-controller` row's `shell.scrollback` (default `1000`) and `shell.maxBufferedBytes` (default 2 MiB), then restart DSH — smaller buffers mean less parsing/reflow work and memory, at the cost of shorter history:
+
+```yaml
+- id: terminal-controller
+  config:
+    shell:
+      scrollback: 300          # default 1000
+      maxBufferedBytes: 1048576 # default 2097152
+```
+
+Choosing a sane `maxOpenTabs` also keeps the number of live xterm instances bounded. Moving headless parsing off the main thread, or canvas/WebGL rendering, are changes inside the official renderer and out of scope for this zero-dependency client plugin.
+
 ## Development
 
 Zero runtime dependencies; tests use Node's built-in runner and a simulated `ModuleLoader` (no browser/jsdom needed).
