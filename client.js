@@ -26,6 +26,7 @@ window.__ModuleLoader__.load({
       var scrollback = null; // null = leave whatever DSH/Host chose (do not override)
       var smoothScrollDuration = 0; // 0 = instant scroll (xterm default)
       var webgl = false; // experimental GPU (WebGL) renderer for running terminals
+      var maxWebgl = null; // null = follow maxOpenTabs (at least 8)
       try {
         var raw = typeof window !== 'undefined' && window.localStorage ? window.localStorage.getItem(CONFIG_KEY) : null;
         if (raw) {
@@ -51,12 +52,15 @@ window.__ModuleLoader__.load({
               smoothScrollDuration = Math.floor(parsed.smoothScrollDuration);
             }
             if (parsed.webgl === true) webgl = true;
+            if (typeof parsed.maxWebgl === 'number' && isFinite(parsed.maxWebgl) && parsed.maxWebgl >= 1) {
+              maxWebgl = Math.floor(parsed.maxWebgl);
+            }
           }
         }
       } catch (e) {
         // malformed config -> defaults
       }
-      return { kinds: kinds, maxOpenTabs: maxOpenTabs, scrollback: scrollback, smoothScrollDuration: smoothScrollDuration, webgl: webgl };
+      return { kinds: kinds, maxOpenTabs: maxOpenTabs, scrollback: scrollback, smoothScrollDuration: smoothScrollDuration, webgl: webgl, maxWebgl: maxWebgl };
     }
 
     // Seed the default config once so it is discoverable (DevTools -> Application ->
@@ -70,7 +74,8 @@ window.__ModuleLoader__.load({
             maxOpenTabs: DEFAULT_MAX_OPEN_TABS,
             scrollback: null,
             smoothScrollDuration: 0,
-            webgl: false
+            webgl: false,
+            maxWebgl: null
           }));
         }
       } catch (e) {}
@@ -86,13 +91,16 @@ window.__ModuleLoader__.load({
           ? Math.floor(next.scrollback) : null;
         var smooth = typeof next.smoothScrollDuration === 'number' && isFinite(next.smoothScrollDuration) && next.smoothScrollDuration >= 0
           ? Math.floor(next.smoothScrollDuration) : 0;
+        var maxWebgl = typeof next.maxWebgl === 'number' && isFinite(next.maxWebgl) && next.maxWebgl >= 1
+          ? Math.floor(next.maxWebgl) : null;
         if (typeof window !== 'undefined' && window.localStorage) {
           window.localStorage.setItem(CONFIG_KEY, JSON.stringify({
             kinds: kinds,
             maxOpenTabs: max,
             scrollback: scrollback,
             smoothScrollDuration: smooth,
-            webgl: next.webgl === true
+            webgl: next.webgl === true,
+            maxWebgl: maxWebgl
           }));
         }
       } catch (e) {}
@@ -124,6 +132,9 @@ window.__ModuleLoader__.load({
       var webglState = React.useState(initial.webgl === true);
       var webglOn = webglState[0];
       var setWebglOn = webglState[1];
+      var mwState = React.useState(initial.maxWebgl == null ? '' : String(initial.maxWebgl));
+      var mwText = mwState[0];
+      var setMwText = mwState[1];
 
       var allKinds = DEFAULT_KINDS.slice();
       var known = ['terminal', 'files', 'text', 'browser'];
@@ -148,7 +159,9 @@ window.__ModuleLoader__.load({
         if (!isFinite(sb) || sb <= 0) sb = null; // empty / 0 -> keep DSH's scrollback
         var smooth = parseInt(smoothText, 10);
         if (!isFinite(smooth) || smooth < 0) smooth = 0;
-        writeConfig({ kinds: kinds, maxOpenTabs: max, scrollback: sb, smoothScrollDuration: smooth, webgl: webglOn });
+        var mw = parseInt(mwText, 10);
+        if (!isFinite(mw) || mw < 1) mw = null; // empty -> follow maxOpenTabs (>=8)
+        writeConfig({ kinds: kinds, maxOpenTabs: max, scrollback: sb, smoothScrollDuration: smooth, webgl: webglOn, maxWebgl: mw });
         try { if (props && typeof props.onConfigChanged === 'function') props.onConfigChanged(); } catch (e) {}
         setSaved(true);
       }
@@ -222,6 +235,17 @@ window.__ModuleLoader__.load({
             }),
             '实验：WebGL 渲染器（GPU，显著提升滚动/输出流畅度）'),
           h('div', { style: muted }, '用 GPU 渲染替代 DOM 渲染，是"滚动丝滑"的实质改善。失败/无 GPU/WebGL 上下文丢失会自动回退 DOM；只对当前可见终端挂载，数量超限会自动回退。需重启 DSH 后生效，默认关闭。')),
+        h('div', { style: { display: 'flex', flexDirection: 'column', gap: '6px', maxWidth: '360px' } },
+          h('label', { style: label }, 'WebGL 上限（maxWebgl）'),
+          h('input', {
+            type: 'number',
+            min: 1,
+            placeholder: '留空=跟随"内存上限"（至少 8）',
+            value: mwText,
+            onChange: function (e) { setMwText(e.target.value); setSaved(false); },
+            style: numStyle
+          }),
+          h('div', { style: muted }, '同时用 GPU 渲染的终端数上限；留空则跟随"内存上限 maxOpenTabs"（至少 8），这样常驻几个就能 GPU 渲染几个。仅 WebGL 开启时生效；改小不影响已挂上的终端。')),
         h('div', { style: { display: 'flex', alignItems: 'center', gap: '12px' } },
           h('button', {
             type: 'button',
@@ -249,7 +273,6 @@ window.__ModuleLoader__.load({
       var elementToTerm = typeof WeakMap === 'function' ? new WeakMap() : null; // .xterm element -> terminal
       var webglAddons = typeof Map === 'function' ? new Map() : null; // terminal -> WebglAddon (live)
       var webglLoading = typeof Set === 'function' ? new Set() : null;
-      var WEBGL_MAX = 8; // per-page WebGL context soft cap (browser limit is ~16)
       var webglWarned = false;
       var webglSupported; // undefined = unprobed; true/false after probing webgl2
       var webglRetried = typeof WeakSet === 'function' ? new WeakSet() : null; // terminals already retried after a context loss
@@ -338,6 +361,16 @@ window.__ModuleLoader__.load({
           } catch (e) { return false; }
         }
 
+        // WebGL context cap. An explicit maxWebgl wins; empty follows the keep-alive limit
+        // (maxOpenTabs) so every kept-mounted terminal can get the GPU renderer; at least 8.
+        function webglCap(cfg) {
+          try {
+            if (cfg && cfg.maxWebgl > 0) return cfg.maxWebgl;
+            var mot = cfg && cfg.maxOpenTabs > 0 ? cfg.maxOpenTabs : 0;
+            return Math.max(8, mot);
+          } catch (e) { return 8; }
+        }
+
         function disposeWebglFor(term) {
           try {
             if (!webglAddons) return;
@@ -355,7 +388,7 @@ window.__ModuleLoader__.load({
             if (!webglAddons || !webglLoading) return;
             if (cfg.webgl !== true) { disposeWebglFor(term); return; }
             if (webglAddons.has(term) || webglLoading.has(term)) return;
-            if (webglAddons.size + webglLoading.size >= WEBGL_MAX) return; // cap counts attached + in-flight
+            if (webglAddons.size + webglLoading.size >= webglCap(cfg)) return; // cap counts attached + in-flight
             if (webglSupported === false) return;
             if (webglSupported === undefined) {
               webglSupported = hasWebgl2();
@@ -485,7 +518,7 @@ window.__ModuleLoader__.load({
           if (typeof window !== 'undefined') {
             window.__dshTerminalKeepalive = window.__dshTerminalKeepalive || {};
             window.__dshTerminalKeepalive.webglStatus = function () {
-              return { supported: webglSupported, attached: webglAddons ? webglAddons.size : 0, cap: WEBGL_MAX };
+              return { supported: webglSupported, attached: webglAddons ? webglAddons.size : 0, cap: webglCap(readConfig()) };
             };
           }
         } catch (e) {}

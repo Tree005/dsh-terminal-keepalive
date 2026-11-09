@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.3
+
+- **Configurable WebGL cap (D2).** New settings-card field `maxWebgl`. Empty → follows the keep-alive limit `maxOpenTabs` (minimum 8), so every kept-mounted terminal can get the GPU renderer; a number sets the cap explicitly. The cap counts attached **and** in-flight loads. Lowering it does not evict already-attached terminals (it only gates new attachments). Debug: `__dshTerminalKeepalive.webglStatus().cap`.
+
 ## 0.5.2
 
 - **WebGL status + context-loss recovery (D1).**

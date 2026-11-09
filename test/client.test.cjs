@@ -337,3 +337,27 @@ test('webgl unsupported (no webgl2): chunk never loaded, stays on DOM', async ()
   } finally { env.dispose(); }
 });
 
+test('webgl cap follows maxOpenTabs when maxWebgl is empty', async () => {
+  const terms = [], els = [];
+  for (let i = 0; i < 12; i++) { const t = makeFakeTerminal(); terms.push(t); els.push(makeXtermElement(t)); }
+  let env;
+  const req = requireWithWebgl({ WebglAddon: FakeWebglAddon });
+  withFakeDocument(els, () => { env = setup({ config: { kinds: ['terminal'], webgl: true, maxOpenTabs: 12 }, require: req }); });
+  await tick();
+  try {
+    assert.strictEqual(terms.reduce((n, t) => n + t._addons.length, 0), 12);
+  } finally { env.dispose(); }
+});
+
+test('webgl cap uses explicit maxWebgl when set', async () => {
+  const terms = [], els = [];
+  for (let i = 0; i < 10; i++) { const t = makeFakeTerminal(); terms.push(t); els.push(makeXtermElement(t)); }
+  let env;
+  const req = requireWithWebgl({ WebglAddon: FakeWebglAddon });
+  withFakeDocument(els, () => { env = setup({ config: { kinds: ['terminal'], webgl: true, maxWebgl: 3 }, require: req }); });
+  await tick();
+  try {
+    assert.strictEqual(terms.reduce((n, t) => n + t._addons.length, 0), 3);
+  } finally { env.dispose(); }
+});
+
