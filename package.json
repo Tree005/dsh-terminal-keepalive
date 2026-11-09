@@ -2,6 +2,10 @@
   "name": "dsh-terminal-keepalive",
   "version": "0.1.0",
   "private": true,
+  "description": "Keep the DSH right-sidebar terminal mounted across tab switches so it no longer reloads.",
+  "keywords": ["dsh", "dsh-plugin", "terminal", "keepalive"],
+  "repository": { "type": "git", "url": "git+https://github.com/Tree005/dsh-terminal-keepalive.git" },
+  "homepage": "https://github.com/Tree005/dsh-terminal-keepalive#readme",
   "type": "module",
   "exports": {
     ".": "./index.js",
