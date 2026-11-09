@@ -14,6 +14,11 @@ window.__ModuleLoader__.load({
     var CONFIG_KEY = 'dsh-terminal-keepalive.config';
     var DEFAULT_KINDS = ['terminal'];
     var DEFAULT_MAX_OPEN_TABS = 6;
+    // Out-of-the-box defaults: smooth scrolling on and the GPU (WebGL) renderer on when the
+    // environment supports WebGL2 (auto-falls back to DOM otherwise). Users can still turn
+    // either off in Settings → 终端常驻; an explicit stored value always wins.
+    var DEFAULT_SMOOTH_SCROLL_DURATION = 110; // ms; 0 = instant (xterm default)
+    var DEFAULT_WEBGL = true;                  // GPU renderer on by default (guarded by WebGL2 precheck)
     // Marker kept on the service object so HMR / repeated apply never stacks wrappers.
     var PATCH = typeof Symbol === 'function' ? Symbol.for('dsh-terminal-keepalive.register') : '__dshTerminalKeepalive';
     // Per-definition record of the value we replaced, so unload can put it back.
@@ -24,8 +29,8 @@ window.__ModuleLoader__.load({
       var kinds = DEFAULT_KINDS.slice();
       var maxOpenTabs = DEFAULT_MAX_OPEN_TABS;
       var scrollback = null; // null = leave whatever DSH/Host chose (do not override)
-      var smoothScrollDuration = 0; // 0 = instant scroll (xterm default)
-      var webgl = false; // experimental GPU (WebGL) renderer for running terminals
+      var smoothScrollDuration = DEFAULT_SMOOTH_SCROLL_DURATION; // ms; 0 = instant
+      var webgl = DEFAULT_WEBGL; // GPU (WebGL) renderer; guarded by a WebGL2 precheck at use
       var maxWebgl = null; // null = follow maxOpenTabs (at least 8)
       var webglVisibleOnly = false; // only attach WebGL to the currently visible terminal
       try {
@@ -52,11 +57,11 @@ window.__ModuleLoader__.load({
             if (typeof parsed.smoothScrollDuration === 'number' && isFinite(parsed.smoothScrollDuration) && parsed.smoothScrollDuration >= 0) {
               smoothScrollDuration = Math.floor(parsed.smoothScrollDuration);
             }
-            if (parsed.webgl === true) webgl = true;
+            if (parsed.webgl === true) webgl = true; else if (parsed.webgl === false) webgl = false;
             if (typeof parsed.maxWebgl === 'number' && isFinite(parsed.maxWebgl) && parsed.maxWebgl >= 1) {
               maxWebgl = Math.floor(parsed.maxWebgl);
             }
-            if (parsed.webglVisibleOnly === true) webglVisibleOnly = true;
+            if (parsed.webglVisibleOnly === true) webglVisibleOnly = true; else if (parsed.webglVisibleOnly === false) webglVisibleOnly = false;
           }
         }
       } catch (e) {
@@ -75,8 +80,8 @@ window.__ModuleLoader__.load({
             kinds: DEFAULT_KINDS.slice(),
             maxOpenTabs: DEFAULT_MAX_OPEN_TABS,
             scrollback: null,
-            smoothScrollDuration: 0,
-            webgl: false,
+            smoothScrollDuration: DEFAULT_SMOOTH_SCROLL_DURATION,
+            webgl: DEFAULT_WEBGL,
             maxWebgl: null,
             webglVisibleOnly: false
           }));
@@ -93,7 +98,7 @@ window.__ModuleLoader__.load({
         var scrollback = typeof next.scrollback === 'number' && isFinite(next.scrollback) && next.scrollback > 0
           ? Math.floor(next.scrollback) : null;
         var smooth = typeof next.smoothScrollDuration === 'number' && isFinite(next.smoothScrollDuration) && next.smoothScrollDuration >= 0
-          ? Math.floor(next.smoothScrollDuration) : 0;
+          ? Math.floor(next.smoothScrollDuration) : DEFAULT_SMOOTH_SCROLL_DURATION;
         var maxWebgl = typeof next.maxWebgl === 'number' && isFinite(next.maxWebgl) && next.maxWebgl >= 1
           ? Math.floor(next.maxWebgl) : null;
         if (typeof window !== 'undefined' && window.localStorage) {
@@ -152,9 +157,9 @@ window.__ModuleLoader__.load({
         setSaved(true);
       }
       function reset() {
-        var d = { kinds: DEFAULT_KINDS.slice(), maxOpenTabs: DEFAULT_MAX_OPEN_TABS, scrollback: null, smoothScrollDuration: 0, webgl: false, maxWebgl: null, webglVisibleOnly: false };
+        var d = { kinds: DEFAULT_KINDS.slice(), maxOpenTabs: DEFAULT_MAX_OPEN_TABS, scrollback: null, smoothScrollDuration: DEFAULT_SMOOTH_SCROLL_DURATION, webgl: DEFAULT_WEBGL, maxWebgl: null, webglVisibleOnly: false };
         writeConfig(d);
-        setKinds(d.kinds); setMaxText(String(d.maxOpenTabs)); setSbText(''); setSmoothText('0'); setWebglOn(false); setMwText(''); setVoOn(false);
+        setKinds(d.kinds); setMaxText(String(d.maxOpenTabs)); setSbText(''); setSmoothText(String(DEFAULT_SMOOTH_SCROLL_DURATION)); setWebglOn(DEFAULT_WEBGL === true); setMwText(''); setVoOn(false);
         try { requestReconcile(); } catch (e) {}
         setSaved(true);
       }
@@ -201,7 +206,7 @@ window.__ModuleLoader__.load({
           h('label', { style: { display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px', color: 'var(--dsw-alias-label-primary)' } },
             h('input', { type: 'checkbox', checked: voOn, onChange: function (e) { setVoOn(e.target.checked); setSaved(false); } }),
             'WebGL 只作用于"当前可见"终端（省显存/context，切换可能略抖动）'),
-          status ? h('div', { style: muted }, 'WebGL 状态：' + (status.supported ? '支持' : '不支持/回退') + '；已挂 ' + status.attached + ' 台；上限 ' + status.cap) : null),
+          status ? h('div', { style: muted }, 'WebGL 状态：' + (status.supported === true ? '支持' : (status.supported === false ? '不支持/回退' : '未检测')) + '；已挂 ' + status.attached + ' 台；上限 ' + status.cap) : null),
         h('div', { style: { display: 'flex', alignItems: 'center', gap: '12px', paddingTop: '6px' } },
           h('button', { type: 'button', onClick: save, style: { padding: '6px 16px', fontSize: '13px', borderRadius: '6px', cursor: 'pointer', color: 'var(--dsw-alias-label-primary)', background: 'var(--dsw-alias-bg-layer-1)', border: '0.5px solid var(--dsw-alias-border-l3)' } }, '保存'),
           h('button', { type: 'button', onClick: reset, style: { padding: '6px 16px', fontSize: '13px', borderRadius: '6px', cursor: 'pointer', color: 'var(--dsw-alias-label-primary)', background: 'transparent', border: '0.5px solid var(--dsw-alias-border-l3)' } }, '恢复默认'),

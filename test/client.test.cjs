@@ -463,36 +463,35 @@ test('readConfig: scrollback 0 / negative collapse to null, positive kept', () =
   assert.strictEqual(readConfigViaSettings({ scrollback: 300 }).scrollback, '300');
 });
 
-test('readConfig: negative smoothScrollDuration collapses to 0', () => {
-  assert.strictEqual(readConfigViaSettings({ smoothScrollDuration: -30 }).smooth, '0');
+test('readConfig: invalid smoothScrollDuration falls back to default, valid/0 kept', () => {
+  assert.strictEqual(readConfigViaSettings({ smoothScrollDuration: -30 }).smooth, '110'); // invalid -> default 110
   assert.strictEqual(readConfigViaSettings({ smoothScrollDuration: 120 }).smooth, '120');
+  assert.strictEqual(readConfigViaSettings({ smoothScrollDuration: 0 }).smooth, '0'); // explicit 0 = off
 });
 
-test('readConfig: webgl / webglVisibleOnly only true for boolean true (strings ignored)', () => {
-  const s = readConfigViaSettings({ webgl: 'true', webglVisibleOnly: 'true' });
-  assert.strictEqual(s.webgl, false);
-  assert.strictEqual(s.webglVisibleOnly, false);
-  const one = readConfigViaSettings({ webgl: '1', webglVisibleOnly: '1' });
-  assert.strictEqual(one.webgl, false);
-  assert.strictEqual(one.webglVisibleOnly, false);
-  const t = readConfigViaSettings({ webgl: true, webglVisibleOnly: true });
-  assert.strictEqual(t.webgl, true);
-  assert.strictEqual(t.webglVisibleOnly, true);
+test('readConfig: webgl default on, explicit booleans honored; webglVisibleOnly boolean only', () => {
+  assert.strictEqual(readConfigViaSettings({}).webgl, true, 'default webgl is on');
+  assert.strictEqual(readConfigViaSettings({ webgl: false }).webgl, false, 'explicit false turns it off');
+  assert.strictEqual(readConfigViaSettings({ webgl: true }).webgl, true);
+  // webglVisibleOnly defaults off; only boolean true enables it
+  assert.strictEqual(readConfigViaSettings({ webglVisibleOnly: 'true' }).webglVisibleOnly, false);
+  assert.strictEqual(readConfigViaSettings({ webglVisibleOnly: '1' }).webglVisibleOnly, false);
+  assert.strictEqual(readConfigViaSettings({ webglVisibleOnly: true }).webglVisibleOnly, true);
 });
 
 test('readConfig: empty + malformed JSON fall back to defaults', () => {
   const d = readConfigViaSettings(undefined);
   assert.strictEqual(d.maxOpenTabs, '6');
   assert.strictEqual(d.scrollback, '');
-  assert.strictEqual(d.smooth, '0');
+  assert.strictEqual(d.smooth, '110');
   assert.strictEqual(d.maxWebgl, '');
-  assert.strictEqual(d.webgl, false);
+  assert.strictEqual(d.webgl, true);
   assert.strictEqual(d.webglVisibleOnly, false);
   const m = readConfigViaSettings('{not json');
   assert.strictEqual(m.maxOpenTabs, '6');
   assert.strictEqual(m.scrollback, '');
   assert.strictEqual(m.maxWebgl, '');
-  assert.strictEqual(m.webgl, false);
+  assert.strictEqual(m.webgl, true);
 });
 
 // --- settings.section registration details ---
@@ -554,13 +553,13 @@ test('webgl on + webgl2: require.async invoked once and loadAddon called', async
   } finally { env.dispose(); }
 });
 
-test('webgl string "true" is not enabled: chunk never loaded', async () => {
+test('webgl explicitly off: chunk never loaded', async () => {
   const term = makeFakeTerminal();
   const xtermEl = makeXtermElement(term);
   let env, loaded = false;
   const req = (name) => (name === 'react' ? fakeReact : {});
   req.async = () => { loaded = true; return Promise.resolve({ WebglAddon: FakeWebglAddon }); };
-  withFakeDocument([xtermEl], () => { env = setup({ config: { kinds: ['terminal'], webgl: 'true' }, require: req }); });
+  withFakeDocument([xtermEl], () => { env = setup({ config: { kinds: ['terminal'], webgl: false }, require: req }); });
   await tick();
   try {
     assert.strictEqual(loaded, false);
@@ -583,8 +582,22 @@ test('webglVisibleOnly string "true" is not enabled: hidden terminal still attac
   } finally { env.dispose(); }
 });
 
-// --- memory gate across multiple configured kinds ---
+test('default config enables WebGL when supported (out-of-the-box)', async () => {
+  const term = makeFakeTerminal();
+  const xtermEl = makeXtermElement(term);
+  let env, asyncCalls = 0;
+  const req = (name) => (name === 'react' ? fakeReact : {});
+  req.async = () => { asyncCalls++; return Promise.resolve({ WebglAddon: FakeWebglAddon }); };
+  withFakeDocument([xtermEl], () => { env = setup({ require: req }); }); // no config -> defaults (webgl on)
+  await tick();
+  try {
+    assert.strictEqual(asyncCalls, 1);
+    assert.strictEqual(term._addons.length, 1);
+    assert.ok(term._addons[0] instanceof FakeWebglAddon);
+  } finally { env.dispose(); }
+});
 
+// --- memory gate across multiple configured kinds ---
 test('memory gate closes/reopens across multiple configured kinds', async () => {
   const tabs = (nTerm, nFiles) => {
     const out = [];

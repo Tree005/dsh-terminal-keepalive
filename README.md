@@ -50,8 +50,8 @@ DevTools → Console:
     kinds: ['terminal', 'files', 'text'],  // tab kinds to keep mounted
     maxOpenTabs: 6,                        // memory ceiling (see below)
     scrollback: null,                      // null = keep DSH's value; e.g. 300 to trim the browser buffer
-    smoothScrollDuration: 0,               // ms; 0 = off; ~80–150 for VSCode-like smooth scrolling
-    webgl: false,                          // experimental GPU renderer (see below)
+    smoothScrollDuration: 110,             // ms; 0 = off; ~80–150 for VSCode-like smooth scrolling
+    webgl: true,                           // GPU renderer (on by default; auto-falls back to DOM)
     maxWebgl: null,                        // null = follow maxOpenTabs (min 8)
     webglVisibleOnly: false                // only attach WebGL to the visible terminal
   }))
@@ -63,8 +63,8 @@ then reload the page (Ctrl/Cmd+R) or restart DSH.
 | `kinds` | `["terminal"]` | Tab kinds to keep mounted. Known kinds shipped by DSH: `terminal`, `files`, `text`, `browser`, `guide`. An empty list keeps nothing mounted (plugin effectively off). |
 | `maxOpenTabs` | `6` | Memory gate: while the number of open tabs of `kinds` (across all sessions) is ≤ this, they stay mounted; above it, keep-alive turns **off for all of `kinds`** until the count drops back. `0` disables the gate (always keep-mounted). |
 | `scrollback` | `null` | Client-side xterm buffer cap. `null`/empty keeps whatever DSH chose (default `1000`); a positive number overrides it per running terminal. Lower values cut repaint/memory on switch-back and scrolling, at the cost of shorter in-browser history. |
-| `smoothScrollDuration` | `0` | Scroll animation length in ms. `0` is xterm's default (instant jump); a value like `80–150` animates wheel scrolling for a smoother, VSCode-like feel. |
-| `webgl` | `false` | **Experimental.** `true` swaps each running terminal's DOM renderer for the GPU (WebGL) renderer (vendored `@xterm/addon-webgl`). This is the only real fix for the per-frame DOM redraw cost behind unsmooth scrolling. Default off; auto-falls back to DOM on context loss / no GPU / load failure, soft-capped at ≥8 contexts (see `maxWebgl`). Applies live — enabling loads the renderer chunk immediately. |
+| `smoothScrollDuration` | `110` | Scroll animation length in ms. The default `110` animates wheel scrolling for a smoother, VSCode-like feel; `0` disables it (xterm's instant jump). |
+| `webgl` | `true` | `true` swaps each running terminal's DOM renderer for the GPU (WebGL) renderer (vendored `@xterm/addon-webgl`). This is the only real fix for the per-frame DOM redraw cost behind unsmooth scrolling. On by default (guarded by a WebGL2 precheck); auto-falls back to DOM on context loss / no GPU / load failure, soft-capped at ≥8 contexts (see `maxWebgl`). Applies live — enabling loads the renderer chunk immediately. Set `false` to opt out. |
 | `maxWebgl` | `null` | WebGL context cap. Empty follows `maxOpenTabs` (minimum 8), so every kept-mounted terminal can use the GPU renderer; a number sets it explicitly. Only gates new attachments (lowering does not evict). Only when `webgl` is on. |
 | `webglVisibleOnly` | `false` | Opt-in: attach WebGL only to the currently visible terminal and release it when hidden. Saves GPU memory/contexts when many terminals are open; small re-init hitch on switch. Off keeps the always-attached, smoothest-switch behaviour. |
 
@@ -87,7 +87,7 @@ Turning keep-alive off (gate) sets `keepMounted = false` and calls the registry'
 
 ### Live terminal tuning + optional WebGL renderer
 
-Later versions tune each **running** terminal live, without restarting DSH: the client reaches the live xterm instance through the DOM (an `.xterm` node's React fiber → the `Terminal` ref) and sets `scrollback` / `smoothScrollDuration` on it. The optional **WebGL renderer** uses the same bridge: it lazily loads the bundled `@xterm/addon-webgl` chunk (`require.async("./client.webgl.js")`) and calls `term.loadAddon(new WebglAddon())`, replacing the DOM renderer with the GPU renderer — the real fix for the per-frame full-viewport DOM redraw behind unsmooth scrolling. It auto-falls back to DOM on context loss / no WebGL2 / load failure, caps concurrent contexts (`maxWebgl`, following `maxOpenTabs`, minimum 8), releases a terminal's context when it closes, and can be limited to the visible terminal (`webglVisibleOnly`). All of this is opt-in from the settings page and defaults to "no change". It re-attaches automatically after monitor-DPR changes, window resize, tab focus and visibility regain (recovering terminals left on the DOM renderer after route/session switches or GPU resets), and never stacks a second WebGL addon on the same terminal (e.g. across plugin hot-reloads).
+Later versions tune each **running** terminal live, without restarting DSH: the client reaches the live xterm instance through the DOM (an `.xterm` node's React fiber → the `Terminal` ref) and sets `scrollback` / `smoothScrollDuration` on it. The optional **WebGL renderer** uses the same bridge: it lazily loads the bundled `@xterm/addon-webgl` chunk (`require.async("./client.webgl.js")`) and calls `term.loadAddon(new WebglAddon())`, replacing the DOM renderer with the GPU renderer — the real fix for the per-frame full-viewport DOM redraw behind unsmooth scrolling. It auto-falls back to DOM on context loss / no WebGL2 / load failure, caps concurrent contexts (`maxWebgl`, following `maxOpenTabs`, minimum 8), releases a terminal's context when it closes, and can be limited to the visible terminal (`webglVisibleOnly`). It is on by default (WebGL when the environment supports WebGL2, smooth scrolling at 110 ms); each can be turned off in the settings page. It re-attaches automatically after monitor-DPR changes, window resize, tab focus and visibility regain (recovering terminals left on the DOM renderer after route/session switches or GPU resets), and never stacks a second WebGL addon on the same terminal (e.g. across plugin hot-reloads).
 
 ## Compatibility
 

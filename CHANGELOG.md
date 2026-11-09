@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.6
+
+- **Out-of-the-box defaults.** Fresh installs now default to the GPU (WebGL) renderer **on** (guarded by a WebGL2 precheck, with automatic DOM fallback) and smooth scrolling at **110 ms**, so it feels smooth with no configuration. Explicit stored values always win (`webgl:false` / `smoothScrollDuration:0` still opt out).
+- Code-quality review fix: **恢复默认** now resets the form to the actual defaults (it previously showed `smooth=0 / webgl=off` while saving 110/on); `writeConfig`'s smooth fallback aligned to the default; WebGL status shows "未检测" before the first probe.
+- Tests: 35 (added a default-enables-WebGL regression; updated default-value assertions).
+
 ## 0.6.5
 
 - WebGL renderer robustness (no UI changes):
