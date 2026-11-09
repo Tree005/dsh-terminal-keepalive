@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.5
+
+- WebGL renderer robustness (no UI changes):
+  - Adopts an existing WebGL addon already on a terminal instead of stacking a second one (fixes duplicate renderers after a plugin hot-reload).
+  - Clears its per-terminal marker on context loss and dispose, so lifecycle stays consistent.
+  - Automatically re-attaches / re-scans after monitor-DPR change, window resize, tab focus, and visibility regain — recovers terminals left on the DOM renderer after route/session switches or GPU resets.
+
 ## 0.6.4
 
 - Reverted the 0.6.2 / 0.6.3 settings-page additions (一键推荐 / 推荐提示 / 复制配置 / 粘贴导入 / 复制诊断 / inline validation) — they proved unhelpful. The settings page is back to the option fields + live WebGL status + 保存 / 恢复默认 only.

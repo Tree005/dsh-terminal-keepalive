@@ -239,6 +239,15 @@ window.__ModuleLoader__.load({
       var observedElements = typeof Set === 'function' ? new Set() : null;
       var observer = null;
       var warnedNoResolve = false;
+      var disposers = [];       // teardown fns for window/document listeners (removed on dispose)
+      var displayTimer = null;  // debounce for DPR/display-change re-attach
+      var scanTimer = null;     // debounce for resize re-scan
+      function addEvent(target, type, fn, opts) {
+        try {
+          target.addEventListener(type, fn, opts);
+          disposers.push(function () { try { target.removeEventListener(type, fn, opts); } catch (e) {} });
+        } catch (e) {}
+      }
       var noop = { refresh: function () {}, dispose: function () {} };
       try {
         if (typeof document === 'undefined' || !document.querySelectorAll || !originals || !elementToTerm) return noop;
@@ -387,6 +396,7 @@ window.__ModuleLoader__.load({
             if (addon) {
               try { addon.dispose(); } catch (e) {}
               webglAddons.delete(term);
+              try { if (term.__dshTerminalKeepaliveWebgl === addon) { try { delete term.__dshTerminalKeepaliveWebgl; } catch (e2) {} } } catch (e) {}
             }
           } catch (e) {}
         }
@@ -396,6 +406,14 @@ window.__ModuleLoader__.load({
             if (!webglAddons || !webglLoading) return;
             if (cfg.webgl !== true) { disposeWebglFor(term); return; }
             if (webglAddons.has(term) || webglLoading.has(term)) return;
+            // Adopt an addon left on the terminal by an earlier plugin instance (e.g. after a
+            // plugin hot-reload) instead of stacking a second WebGL addon on the same terminal.
+            try {
+              if (term.__dshTerminalKeepaliveWebgl) {
+                if (!webglAddons.has(term)) webglAddons.set(term, term.__dshTerminalKeepaliveWebgl);
+                return;
+              }
+            } catch (e) {}
             if (cfg.webglVisibleOnly === true && visibilityObserver && !isElementVisible(term)) return; // visible-only: wait until shown
             if (webglAddons.size + webglLoading.size >= webglCap(cfg)) return; // cap counts attached + in-flight
             if (webglSupported === false) return;
@@ -417,6 +435,7 @@ window.__ModuleLoader__.load({
                     addon.onContextLoss(function () {
                       try { addon.dispose(); } catch (e) {}
                       try { webglAddons.delete(term); } catch (e) {}
+                      try { if (term.__dshTerminalKeepaliveWebgl === addon) { try { delete term.__dshTerminalKeepaliveWebgl; } catch (e2) {} } } catch (e) {}
                       webglWarnOnce('context lost; fell back to DOM');
                       // One restart attempt after a transient GPU reset; if it loses the
                       // context again we stay on DOM (webglRetried guards against a loop).
@@ -431,6 +450,7 @@ window.__ModuleLoader__.load({
                 }
                 term.loadAddon(addon);
                 webglAddons.set(term, addon);
+                try { term.__dshTerminalKeepaliveWebgl = addon; } catch (e) {}
                 if (!webglActiveLogged) { webglActiveLogged = true; try { console.info(LOG, 'WebGL renderer active'); } catch (e) {} }
               } catch (e) {
                 webglWarnOnce('activate failed: ' + (e && e.message));
@@ -534,13 +554,61 @@ window.__ModuleLoader__.load({
           }
         } catch (e) {}
 
+        // --- display-change / wake re-attach (no UI) ---
+        // Recreate the GPU renderer for every live terminal so its backing canvas matches the
+        // new pixel ratio; used when the display DPR changes (monitor/zoom switches).
+        function displayReattach() {
+          try {
+            var cfg = readConfig();
+            var nodes = document.querySelectorAll('.xterm');
+            for (var i = 0; i < nodes.length; i++) {
+              var el = nodes[i];
+              var term = elementToTerm.get(el);
+              if (!term) { term = findTerminal(el); if (term) elementToTerm.set(el, term); }
+              if (!term) continue;
+              disposeWebglFor(term);
+              tune(term, cfg);
+            }
+          } catch (e) {}
+        }
+        function scheduleDisplayChange() {
+          try { if (displayTimer) return; displayTimer = setTimeout(function () { displayTimer = null; displayReattach(); }, 250); } catch (e) { displayReattach(); }
+        }
+        function scheduleScan() {
+          try { if (scanTimer) return; scanTimer = setTimeout(function () { scanTimer = null; scan(); }, 200); } catch (e) { scan(); }
+        }
+        function onWake() { try { if (typeof document !== 'undefined' && document.hidden) return; scan(); } catch (e) {} }
+        function watchDpr() {
+          try {
+            if (typeof window === 'undefined' || !window.matchMedia) return;
+            var dpr = window.devicePixelRatio || 1;
+            var mq = window.matchMedia('(resolution: ' + dpr + 'dppx)');
+            var handler = function () {
+              try { if (mq.removeEventListener) mq.removeEventListener('change', handler); else if (mq.removeListener) mq.removeListener(handler); } catch (e) {}
+              scheduleDisplayChange();
+              watchDpr();
+            };
+            if (mq.addEventListener) mq.addEventListener('change', handler);
+            else if (mq.addListener) mq.addListener(handler);
+            disposers.push(function () { try { if (mq.removeEventListener) mq.removeEventListener('change', handler); else if (mq.removeListener) mq.removeListener(handler); } catch (e) {} });
+          } catch (e) {}
+        }
+        addEvent(window, 'resize', scheduleScan);
+        addEvent(window, 'orientationchange', scheduleScan);
+        addEvent(window, 'focus', onWake);
+        addEvent(document, 'visibilitychange', onWake);
+        watchDpr();
+
         scan();
         return {
           refresh: function () { try { scan(); } catch (e) {} },
           dispose: function () {
             try { if (observer) observer.disconnect(); } catch (e) {}
             try { if (visibilityObserver) { visibilityObserver.disconnect(); visibilityObserver = null; } } catch (e) {}
-            try { if (webglAddons) { webglAddons.forEach(function (a) { try { a.dispose(); } catch (e) {} }); webglAddons.clear(); } } catch (e) {}
+            try { if (displayTimer) { clearTimeout(displayTimer); displayTimer = null; } } catch (e) {}
+            try { if (scanTimer) { clearTimeout(scanTimer); scanTimer = null; } } catch (e) {}
+            try { for (var i = 0; i < disposers.length; i++) { try { disposers[i](); } catch (e) {} } disposers.length = 0; } catch (e) {}
+            try { if (webglAddons) { webglAddons.forEach(function (a, t) { try { a.dispose(); } catch (e) {} try { if (t && t.__dshTerminalKeepaliveWebgl === a) { try { delete t.__dshTerminalKeepaliveWebgl; } catch (e2) {} } } catch (e) {} }); webglAddons.clear(); } } catch (e) {}
           },
         };
       } catch (e) {
