@@ -1,0 +1,3 @@
+- insert:
+    - id: dsh-terminal-keepalive
+      name: 'dsh-terminal-keepalive'
