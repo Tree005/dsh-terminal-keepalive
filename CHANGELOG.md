@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.4
+
+- Reverted the 0.6.2 / 0.6.3 settings-page additions (一键推荐 / 推荐提示 / 复制配置 / 粘贴导入 / 复制诊断 / inline validation) — they proved unhelpful. The settings page is back to the option fields + live WebGL status + 保存 / 恢复默认 only.
+
 ## 0.6.3
 
 - Settings page: **复制诊断** button — copies a support bundle (config + live WebGL status + user agent + timestamp) to the clipboard.

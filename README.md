@@ -39,15 +39,7 @@ Restart DSH after installing.
 
 ### Settings page
 
-Open **Settings → 终端常驻** — its own left-nav entry, not the plugin detail page (0.6.1 removed the duplicate card there). It is the single place with every option (tab kinds, `maxOpenTabs`, `scrollback`, `smoothScrollDuration`, and the experimental WebGL renderer `webgl` / `maxWebgl` / `webglVisibleOnly`), plus a live WebGL status line (`supported / attached / cap`). Buttons:
-
-- **一键推荐** — one click sets WebGL on and `smoothScrollDuration` to 110.
-- **复制配置 / 粘贴导入** — copy the current config JSON to the clipboard / paste a JSON back in.
-- **复制诊断** — copy config + WebGL status + user agent + timestamp to the clipboard (for bug reports).
-- **恢复默认** — reset every field to the defaults below.
-- **保存** — write the config and apply it immediately (enabling WebGL loads the renderer chunk on the spot), no restart.
-
-Invalid numbers show **inline validation** hints, and a recommendation banner suggests enabling WebGL / raising smooth-scroll when WebGL2 is available.
+Open **Settings → 终端常驻** — its own left-nav entry, not the plugin detail page (0.6.1 removed the duplicate card there). It is the single place with every option (tab kinds, `maxOpenTabs`, `scrollback`, `smoothScrollDuration`, and the experimental WebGL renderer `webgl` / `maxWebgl` / `webglVisibleOnly`), plus a live WebGL status line (`supported / attached / cap`) and a **保存** (apply immediately, no restart) / **恢复默认** (reset) button.
 
 **Manually:** the config is a JSON object in `localStorage` under the key **`dsh-terminal-keepalive.config`**; the plugin writes a default on first run, so you can just edit it:
 

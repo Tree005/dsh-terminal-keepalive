@@ -158,62 +158,9 @@ window.__ModuleLoader__.load({
         try { requestReconcile(); } catch (e) {}
         setSaved(true);
       }
-      function applyRecommended() {
-        var max = parseInt(maxText, 10); if (!isFinite(max) || max < 0) max = DEFAULT_MAX_OPEN_TABS;
-        writeConfig({ kinds: kinds, maxOpenTabs: max, scrollback: null, smoothScrollDuration: 110, webgl: true, maxWebgl: null, webglVisibleOnly: false });
-        setSmoothText('110'); setWebglOn(true); setMwText(''); setVoOn(false); setSbText('');
-        try { requestReconcile(); } catch (e) {}
-        setSaved(true);
-      }
-      function copyConfig() {
-        try {
-          var json = JSON.stringify(readConfig());
-          if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
-            try { navigator.clipboard.writeText(json); } catch (e) {}
-          }
-          try { console.info('[dsh-terminal-keepalive] config:', json); } catch (e) {}
-          setSaved(true);
-        } catch (e) {}
-      }
-      function copyDiagnostics() {
-        try {
-          var st = null;
-          try { if (typeof window !== 'undefined' && window.__dshTerminalKeepalive && typeof window.__dshTerminalKeepalive.webglStatus === 'function') st = window.__dshTerminalKeepalive.webglStatus(); } catch (e) {}
-          var info = { plugin: 'dsh-terminal-keepalive', config: readConfig(), webgl: st, ua: (typeof navigator !== 'undefined' ? navigator.userAgent : ''), ts: new Date().toISOString() };
-          var json = JSON.stringify(info, null, 2);
-          if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) { try { navigator.clipboard.writeText(json); } catch (e) {} }
-          try { console.info('[dsh-terminal-keepalive] diagnostics:', info); } catch (e) {}
-          setSaved(true);
-        } catch (e) {}
-      }
 
       var status = null;
       try { if (typeof window !== 'undefined' && window.__dshTerminalKeepalive && typeof window.__dshTerminalKeepalive.webglStatus === 'function') status = window.__dshTerminalKeepalive.webglStatus(); } catch (e) {}
-      var webglSupportedNow = !!(status && status.supported === true);
-      var recommendSmooth = webglOn === true && (parseInt(smoothText, 10) || 0) === 0;
-      function badNum(t, min) { if (t === '' || t == null) return false; var n = parseInt(t, 10); return !isFinite(n) || n < min; }
-      var issues = [];
-      if (badNum(maxText, 0)) issues.push('内存上限需为 ≥0 的整数');
-      if (badNum(sbText, 1)) issues.push('历史行数需留空或 ≥1 的整数');
-      if (badNum(smoothText, 0)) issues.push('平滑滚动需为 ≥0 的整数');
-      if (badNum(mwText, 1)) issues.push('WebGL 上限需留空或 ≥1 的整数');
-      function importConfig() {
-        try {
-          var clip = (typeof navigator !== 'undefined' && navigator.clipboard) ? navigator.clipboard : null;
-          if (!clip || typeof clip.readText !== 'function') { try { console.warn(LOG, 'clipboard import unavailable'); } catch (e) {} return; }
-          clip.readText().then(function (text) {
-            try {
-              var o = JSON.parse(text);
-              if (!o || typeof o !== 'object') return;
-              writeConfig(o);
-              var c = readConfig();
-              setKinds(c.kinds); setMaxText(String(c.maxOpenTabs)); setSbText(c.scrollback == null ? '' : String(c.scrollback)); setSmoothText(String(c.smoothScrollDuration || 0)); setWebglOn(c.webgl === true); setMwText(c.maxWebgl == null ? '' : String(c.maxWebgl)); setVoOn(c.webglVisibleOnly === true);
-              try { requestReconcile(); } catch (e) {}
-              setSaved(true);
-            } catch (e) {}
-          });
-        } catch (e) {}
-      }
 
       var muted = { fontSize: '12px', color: 'var(--dsw-alias-label-tertiary)' };
       var labelStyle = { fontSize: '13px', color: 'var(--dsw-alias-label-primary)', fontWeight: 500 };
@@ -228,11 +175,6 @@ window.__ModuleLoader__.load({
       return h('div', { style: { display: 'flex', flexDirection: 'column', gap: '4px', padding: '4px 0', maxWidth: '720px' } },
         h('h2', { style: { fontSize: '16px', fontWeight: 600, color: 'var(--dsw-alias-label-primary)', margin: '0 0 2px' } }, '终端常驻'),
         h('div', { style: muted }, '让官方右侧内置终端在切换标签/会话时保持挂载；并调节缓冲、滚动与渲染。保存后即时生效（WebGL 会即时拉取渲染分块）。'),
-        webglSupportedNow ? h('div', { style: { fontSize: '12px', color: 'var(--dsw-alias-label-secondary)', background: 'var(--dsw-alias-bg-layer-1)', border: '0.5px solid var(--dsw-alias-border-l3)', borderRadius: '6px', padding: '8px 10px' } },
-          (webglOn
-            ? (recommendSmooth ? '提示：已开启 WebGL；若想更顺滑，把「平滑滚动时长」设为 100–130。' : '提示：WebGL 已开启（GPU 渲染）。')
-            : '推荐：检测到支持 WebGL2，建议开启 WebGL 渲染以显著提升滚动/输出流畅度。点「一键推荐」即可。')) : null,
-        issues.length ? h('div', { style: { fontSize: '12px', color: 'var(--dsw-color-danger, #e5484d)' } }, '输入有误：' + issues.join('；')) : null,
         h('div', { style: section },
           h('div', { style: labelStyle }, '常驻的标签类型'),
           h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: '8px' } }, boxes),
@@ -260,12 +202,8 @@ window.__ModuleLoader__.load({
             h('input', { type: 'checkbox', checked: voOn, onChange: function (e) { setVoOn(e.target.checked); setSaved(false); } }),
             'WebGL 只作用于"当前可见"终端（省显存/context，切换可能略抖动）'),
           status ? h('div', { style: muted }, 'WebGL 状态：' + (status.supported ? '支持' : '不支持/回退') + '；已挂 ' + status.attached + ' 台；上限 ' + status.cap) : null),
-        h('div', { style: { display: 'flex', alignItems: 'center', gap: '12px', paddingTop: '6px', flexWrap: 'wrap' } },
+        h('div', { style: { display: 'flex', alignItems: 'center', gap: '12px', paddingTop: '6px' } },
           h('button', { type: 'button', onClick: save, style: { padding: '6px 16px', fontSize: '13px', borderRadius: '6px', cursor: 'pointer', color: 'var(--dsw-alias-label-primary)', background: 'var(--dsw-alias-bg-layer-1)', border: '0.5px solid var(--dsw-alias-border-l3)' } }, '保存'),
-          h('button', { type: 'button', onClick: applyRecommended, style: { padding: '6px 16px', fontSize: '13px', borderRadius: '6px', cursor: 'pointer', color: 'var(--dsw-alias-label-primary)', background: 'var(--dsw-alias-bg-layer-1)', border: '0.5px solid var(--dsw-alias-border-l3)' } }, '一键推荐'),
-          h('button', { type: 'button', onClick: copyConfig, style: { padding: '6px 16px', fontSize: '13px', borderRadius: '6px', cursor: 'pointer', color: 'var(--dsw-alias-label-primary)', background: 'transparent', border: '0.5px solid var(--dsw-alias-border-l3)' } }, '复制配置'),
-          h('button', { type: 'button', onClick: importConfig, style: { padding: '6px 16px', fontSize: '13px', borderRadius: '6px', cursor: 'pointer', color: 'var(--dsw-alias-label-primary)', background: 'transparent', border: '0.5px solid var(--dsw-alias-border-l3)' } }, '粘贴导入'),
-          h('button', { type: 'button', onClick: copyDiagnostics, style: { padding: '6px 16px', fontSize: '13px', borderRadius: '6px', cursor: 'pointer', color: 'var(--dsw-alias-label-primary)', background: 'transparent', border: '0.5px solid var(--dsw-alias-border-l3)' } }, '复制诊断'),
           h('button', { type: 'button', onClick: reset, style: { padding: '6px 16px', fontSize: '13px', borderRadius: '6px', cursor: 'pointer', color: 'var(--dsw-alias-label-primary)', background: 'transparent', border: '0.5px solid var(--dsw-alias-border-l3)' } }, '恢复默认'),
           saved ? h('span', { style: muted }, '已保存，立即生效') : null));
     }
