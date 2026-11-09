@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Terminal keep-alive",
-    "description": "Keeps right-sidebar terminal tabs mounted across tab and session switches so they no longer reload."
+    "description": "Keeps right-sidebar terminal tabs mounted across tab and session switches so they no longer reload. Configurable tab kinds and a memory cap."
   }
 }

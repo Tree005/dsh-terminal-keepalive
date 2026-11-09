@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.0
+
+- **Configurable tab kinds.** `KINDS` is no longer hard-coded. A JSON config in `localStorage['dsh-terminal-keepalive.config']` now chooses `kinds` (e.g. `["terminal","files","text"]`), with a default written on first run.
+- **Memory ceiling.** New `maxOpenTabs` global gate: when the number of open tabs of the configured kinds exceeds it, keep-alive turns off for those kinds until the count drops back (keepMounted is a per-kind boolean, so a per-instance cap is not expressible through the public API). `0` disables the gate.
+- Reconcile is driven by `sidebarRight.openTabs` changes; toggling the gate calls the registry `refresh()` so already-rendered tabs re-read `keepMounted`.
+- Definitions touched by the plugin are restored on unload (removes `keepMounted` if the registering plugin never set it).
+
 ## 0.1.1
 
 - Make the `register` wrapper idempotent (marker on the service object) so HMR / repeated apply never stacks wrappers.
