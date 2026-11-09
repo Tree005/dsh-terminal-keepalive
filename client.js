@@ -252,6 +252,8 @@ window.__ModuleLoader__.load({
       var WEBGL_MAX = 8; // per-page WebGL context soft cap (browser limit is ~16)
       var webglWarned = false;
       var webglSupported; // undefined = unprobed; true/false after probing webgl2
+      var webglRetried = typeof WeakSet === 'function' ? new WeakSet() : null; // terminals already retried after a context loss
+      var webglActiveLogged = false;
       var observer = null;
       var warnedNoResolve = false;
       var noop = { refresh: function () {}, dispose: function () {} };
@@ -374,11 +376,20 @@ window.__ModuleLoader__.load({
                       try { addon.dispose(); } catch (e) {}
                       try { webglAddons.delete(term); } catch (e) {}
                       webglWarnOnce('context lost; fell back to DOM');
+                      // One restart attempt after a transient GPU reset; if it loses the
+                      // context again we stay on DOM (webglRetried guards against a loop).
+                      try {
+                        if (webglRetried && !webglRetried.has(term)) {
+                          webglRetried.add(term);
+                          setTimeout(function () { try { maybeWebgl(term, readConfig()); } catch (e) {} }, 1200);
+                        }
+                      } catch (e) {}
                     });
                   } catch (e) {}
                 }
                 term.loadAddon(addon);
                 webglAddons.set(term, addon);
+                if (!webglActiveLogged) { webglActiveLogged = true; try { console.info(LOG, 'WebGL renderer active'); } catch (e) {} }
               } catch (e) {
                 webglWarnOnce('activate failed: ' + (e && e.message));
               }
@@ -468,6 +479,17 @@ window.__ModuleLoader__.load({
         } catch (e) {
           observer = null;
         }
+        // Minimal runtime self-check hook for the console (not a settings-page UI):
+        //   __dshTerminalKeepalive.webglStatus()  -> { supported, attached, cap }
+        try {
+          if (typeof window !== 'undefined') {
+            window.__dshTerminalKeepalive = window.__dshTerminalKeepalive || {};
+            window.__dshTerminalKeepalive.webglStatus = function () {
+              return { supported: webglSupported, attached: webglAddons ? webglAddons.size : 0, cap: WEBGL_MAX };
+            };
+          }
+        } catch (e) {}
+
         scan();
         return {
           refresh: function () { try { scan(); } catch (e) {} },

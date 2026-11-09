@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.2
+
+- **WebGL status + context-loss recovery (D1).**
+  - `console.info('[dsh-terminal-keepalive] WebGL renderer active')` once when the GPU renderer first attaches — makes it obvious it took effect.
+  - `__dshTerminalKeepalive.webglStatus()` in the console returns `{ supported, attached, cap }` for a quick self-check (no settings-page UI yet).
+  - After a transient WebGL context loss, retry re-attaching once (~1.2s later); if it loses the context again, stay on DOM. Previously a single GPU reset permanently downgraded that terminal to the DOM renderer.
+
 ## 0.5.1
 
 - **WebGL robustness (no behaviour change by default).**
