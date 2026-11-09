@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.1
+
+- Removed the duplicate config card on the plugin detail page. **Settings → 终端常驻** is now the single configuration surface (the plugin detail page no longer repeats the form); the plugin description points to it.
+
 ## 0.6.0
 
 - **Dedicated settings page.** Registers a **Settings → 终端常驻** page (`settings.section` + `settings.section.icon`) with every option in one place — tab kinds, `maxOpenTabs`, `scrollback`, `smoothScrollDuration`, `webgl`, `maxWebgl`, `webglVisibleOnly` — plus a live WebGL status line (`supported / attached / cap`) and a **恢复默认** (reset) button. The compact card on the plugin detail page remains.

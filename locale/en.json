@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Terminal keep-alive",
-    "description": "Keeps the official right-sidebar built-in terminal mounted across tab and session switches so it no longer reloads. Configurable tab kinds, memory cap, smooth scrolling and an optional WebGL renderer."
+    "description": "Keeps the official right-sidebar built-in terminal mounted across tab and session switches so it no longer reloads. Configurable tab kinds, memory cap, smooth scrolling and an optional WebGL renderer (configure in Settings → Terminal keep-alive)."
   }
 }

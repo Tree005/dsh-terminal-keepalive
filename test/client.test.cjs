@@ -158,33 +158,6 @@ test('missing sidebarRight service leaves gate open (no crash)', () => {
   } finally { env.dispose(); }
 });
 
-test('registers a settings card into plugins.bundle.config keyed by package name', () => {
-  const env = setup();
-  try {
-    const card = env.slots._regs.find((r) => r.opts.name === 'plugins.bundle.config');
-    assert.ok(card, 'plugins.bundle.config registered');
-    assert.strictEqual(card.opts.key, 'dsh-terminal-keepalive');
-    assert.strictEqual(typeof card.comp, 'function');
-    const injected = card.opts.inject();
-    assert.strictEqual(typeof injected.onConfigChanged, 'function');
-  } finally { env.dispose(); }
-});
-
-test('saving config applies immediately via onConfigChanged', async () => {
-  const env = setup({ defs: [{ id: 't', kind: 'terminal' }] });
-  try {
-    const card = env.slots._regs.find((r) => r.opts.name === 'plugins.bundle.config');
-    const injected = card.opts.inject();
-    const files = { id: 'f', kind: 'files' };
-    env.reg._defs.set('files', files);
-    window.localStorage.setItem(CONFIG_KEY, JSON.stringify({ kinds: ['terminal', 'files'], maxOpenTabs: 6 }));
-    injected.onConfigChanged();
-    await tick();
-    assert.strictEqual(files.keepMounted, true);
-    assert.strictEqual(env.reg.get('terminal').keepMounted, true);
-  } finally { env.dispose(); }
-});
-
 test('dispose restores original keepMounted', () => {
   const env = setup();
   const def = env.reg.get('terminal');
@@ -240,18 +213,12 @@ test('tuner applies scrollback + smoothScrollDuration to a running terminal', ()
   });
 });
 
-test('tuner restores the original scrollback when the setting is cleared', () => {
+test('null scrollback leaves the terminal value untouched', () => {
   const term = makeFakeTerminal({ scrollback: 1000 });
   const xtermEl = makeXtermElement(term);
   withFakeDocument([xtermEl], () => {
-    const env = setup({ config: { kinds: ['terminal'], scrollback: 300, smoothScrollDuration: 0 } });
+    const env = setup({ config: { kinds: ['terminal'], scrollback: null, smoothScrollDuration: 0 } });
     try {
-      assert.strictEqual(term.options.scrollback, 300);
-      const card = env.slots._regs.find((r) => r.opts.name === 'plugins.bundle.config');
-      const injected = card.opts.inject();
-      // Clear scrollback (null) and save -> reconcile -> tuner.refresh restores DSH's 1000.
-      window.localStorage.setItem(CONFIG_KEY, JSON.stringify({ kinds: ['terminal'], maxOpenTabs: 6, scrollback: null, smoothScrollDuration: 0 }));
-      injected.onConfigChanged();
       assert.strictEqual(term.options.scrollback, 1000);
     } finally { env.dispose(); }
   });
