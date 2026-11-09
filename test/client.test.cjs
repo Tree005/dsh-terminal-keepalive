@@ -361,3 +361,61 @@ test('webgl cap uses explicit maxWebgl when set', async () => {
   } finally { env.dispose(); }
 });
 
+function installIO() {
+  const insts = [];
+  const prev = global.IntersectionObserver;
+  global.IntersectionObserver = class {
+    constructor(cb) { this.cb = cb; this.targets = []; insts.push(this); }
+    observe(el) { this.targets.push(el); }
+    unobserve() {}
+    disconnect() { this.targets = []; }
+  };
+  return { insts, restore() { global.IntersectionObserver = prev; } };
+}
+
+test('webgl visible-only: hidden stays DOM until visible, released when hidden again', async () => {
+  const prevDoc = global.document, prevMO = global.MutationObserver;
+  const io = installIO();
+  const term = makeFakeTerminal();
+  term.element = { offsetParent: null, clientWidth: 0, clientHeight: 0 }; // hidden
+  const xtermEl = makeXtermElement(term);
+  let env;
+  const req = requireWithWebgl({ WebglAddon: FakeWebglAddon });
+  global.document = {
+    documentElement: {}, body: {},
+    querySelectorAll: (sel) => (sel === '.xterm' ? [xtermEl] : []),
+    createElement: () => ({ getContext: (t) => (t === 'webgl2' ? {} : null) }),
+  };
+  global.MutationObserver = class { constructor() {} observe() {} disconnect() {} };
+  try {
+    env = setup({ config: { kinds: ['terminal'], webgl: true, webglVisibleOnly: true }, require: req });
+    await tick();
+    assert.strictEqual(term._addons.length, 0, 'hidden: not attached');
+    term.element.offsetParent = {}; term.element.clientWidth = 100; term.element.clientHeight = 100;
+    io.insts[0].cb([{ target: xtermEl, isIntersecting: true }], io.insts[0]);
+    await tick();
+    assert.strictEqual(term._addons.length, 1, 'visible: attached');
+    assert.strictEqual(term._addons[0].disposed, false);
+    io.insts[0].cb([{ target: xtermEl, isIntersecting: false }], io.insts[0]);
+    await tick();
+    assert.strictEqual(term._addons[0].disposed, true, 'hidden: released to DOM');
+  } finally {
+    try { if (env) env.dispose(); } catch (e) {}
+    io.restore();
+    global.document = prevDoc; global.MutationObserver = prevMO;
+  }
+});
+
+test('webgl visible-only off (default): hidden-size terminal still attaches', async () => {
+  const term = makeFakeTerminal();
+  term.element = { offsetParent: null, clientWidth: 0, clientHeight: 0 }; // would be "hidden"
+  const xtermEl = makeXtermElement(term);
+  let env;
+  const req = requireWithWebgl({ WebglAddon: FakeWebglAddon });
+  withFakeDocument([xtermEl], () => { env = setup({ config: { kinds: ['terminal'], webgl: true }, require: req }); });
+  await tick();
+  try {
+    assert.strictEqual(term._addons.length, 1, 'default: visibility irrelevant, attaches');
+  } finally { env.dispose(); }
+});
+

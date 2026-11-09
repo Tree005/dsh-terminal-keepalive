@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.4
+
+- **Visible-only WebGL (D3, opt-in, default off).** New settings checkbox `webglVisibleOnly`. When enabled, WebGL is attached only to the terminal currently on screen (tracked with an `IntersectionObserver`) and released when it is hidden (tab/session switch or panel closed), so only ~1 context is held during multi-terminal use. Off by default to keep the current always-attached, smoothest-switch behaviour. Only effective when `webgl` is on and `IntersectionObserver` is available (otherwise it falls back to always-attach).
+
 ## 0.5.3
 
 - **Configurable WebGL cap (D2).** New settings-card field `maxWebgl`. Empty → follows the keep-alive limit `maxOpenTabs` (minimum 8), so every kept-mounted terminal can get the GPU renderer; a number sets the cap explicitly. The cap counts attached **and** in-flight loads. Lowering it does not evict already-attached terminals (it only gates new attachments). Debug: `__dshTerminalKeepalive.webglStatus().cap`.

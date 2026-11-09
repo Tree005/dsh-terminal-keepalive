@@ -27,6 +27,7 @@ window.__ModuleLoader__.load({
       var smoothScrollDuration = 0; // 0 = instant scroll (xterm default)
       var webgl = false; // experimental GPU (WebGL) renderer for running terminals
       var maxWebgl = null; // null = follow maxOpenTabs (at least 8)
+      var webglVisibleOnly = false; // only attach WebGL to the currently visible terminal
       try {
         var raw = typeof window !== 'undefined' && window.localStorage ? window.localStorage.getItem(CONFIG_KEY) : null;
         if (raw) {
@@ -55,12 +56,13 @@ window.__ModuleLoader__.load({
             if (typeof parsed.maxWebgl === 'number' && isFinite(parsed.maxWebgl) && parsed.maxWebgl >= 1) {
               maxWebgl = Math.floor(parsed.maxWebgl);
             }
+            if (parsed.webglVisibleOnly === true) webglVisibleOnly = true;
           }
         }
       } catch (e) {
         // malformed config -> defaults
       }
-      return { kinds: kinds, maxOpenTabs: maxOpenTabs, scrollback: scrollback, smoothScrollDuration: smoothScrollDuration, webgl: webgl, maxWebgl: maxWebgl };
+      return { kinds: kinds, maxOpenTabs: maxOpenTabs, scrollback: scrollback, smoothScrollDuration: smoothScrollDuration, webgl: webgl, maxWebgl: maxWebgl, webglVisibleOnly: webglVisibleOnly };
     }
 
     // Seed the default config once so it is discoverable (DevTools -> Application ->
@@ -75,7 +77,8 @@ window.__ModuleLoader__.load({
             scrollback: null,
             smoothScrollDuration: 0,
             webgl: false,
-            maxWebgl: null
+            maxWebgl: null,
+            webglVisibleOnly: false
           }));
         }
       } catch (e) {}
@@ -100,7 +103,8 @@ window.__ModuleLoader__.load({
             scrollback: scrollback,
             smoothScrollDuration: smooth,
             webgl: next.webgl === true,
-            maxWebgl: maxWebgl
+            maxWebgl: maxWebgl,
+            webglVisibleOnly: next.webglVisibleOnly === true
           }));
         }
       } catch (e) {}
@@ -135,6 +139,9 @@ window.__ModuleLoader__.load({
       var mwState = React.useState(initial.maxWebgl == null ? '' : String(initial.maxWebgl));
       var mwText = mwState[0];
       var setMwText = mwState[1];
+      var voState = React.useState(initial.webglVisibleOnly === true);
+      var voOn = voState[0];
+      var setVoOn = voState[1];
 
       var allKinds = DEFAULT_KINDS.slice();
       var known = ['terminal', 'files', 'text', 'browser'];
@@ -161,7 +168,7 @@ window.__ModuleLoader__.load({
         if (!isFinite(smooth) || smooth < 0) smooth = 0;
         var mw = parseInt(mwText, 10);
         if (!isFinite(mw) || mw < 1) mw = null; // empty -> follow maxOpenTabs (>=8)
-        writeConfig({ kinds: kinds, maxOpenTabs: max, scrollback: sb, smoothScrollDuration: smooth, webgl: webglOn, maxWebgl: mw });
+        writeConfig({ kinds: kinds, maxOpenTabs: max, scrollback: sb, smoothScrollDuration: smooth, webgl: webglOn, maxWebgl: mw, webglVisibleOnly: voOn });
         try { if (props && typeof props.onConfigChanged === 'function') props.onConfigChanged(); } catch (e) {}
         setSaved(true);
       }
@@ -246,6 +253,15 @@ window.__ModuleLoader__.load({
             style: numStyle
           }),
           h('div', { style: muted }, '同时用 GPU 渲染的终端数上限；留空则跟随"内存上限 maxOpenTabs"（至少 8），这样常驻几个就能 GPU 渲染几个。仅 WebGL 开启时生效；改小不影响已挂上的终端。')),
+        h('div', { style: { display: 'flex', flexDirection: 'column', gap: '6px', maxWidth: '420px' } },
+          h('label', { style: { display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px', color: 'var(--dsw-alias-label-primary)' } },
+            h('input', {
+              type: 'checkbox',
+              checked: voOn,
+              onChange: function (e) { setVoOn(e.target.checked); setSaved(false); }
+            }),
+            'WebGL 只作用于"当前可见"终端（切走释放、切回重挂）'),
+          h('div', { style: muted }, '多开终端时省显存/context（只给当前可见的挂 GPU）。代价：切换瞬间可能有一点点重建抖动。默认关，保持"一直挂、切换最顺"。仅 WebGL 开启时有效。')),
         h('div', { style: { display: 'flex', alignItems: 'center', gap: '12px' } },
           h('button', {
             type: 'button',
@@ -277,6 +293,8 @@ window.__ModuleLoader__.load({
       var webglSupported; // undefined = unprobed; true/false after probing webgl2
       var webglRetried = typeof WeakSet === 'function' ? new WeakSet() : null; // terminals already retried after a context loss
       var webglActiveLogged = false;
+      var visibilityObserver = null; // IntersectionObserver for visible-only mode
+      var observedElements = typeof Set === 'function' ? new Set() : null;
       var observer = null;
       var warnedNoResolve = false;
       var noop = { refresh: function () {}, dispose: function () {} };
@@ -371,6 +389,54 @@ window.__ModuleLoader__.load({
           } catch (e) { return 8; }
         }
 
+        function isElementVisible(term) {
+          try {
+            var el = term && term.element;
+            if (!el) return true; // unknown -> let it try
+            if (el.offsetParent === null) return false;
+            return el.clientWidth > 0 && el.clientHeight > 0;
+          } catch (e) { return true; }
+        }
+
+        function observeElement(el) {
+          try {
+            if (!visibilityObserver || !observedElements) return;
+            if (observedElements.has(el)) return;
+            observedElements.add(el);
+            visibilityObserver.observe(el);
+          } catch (e) {}
+        }
+
+        // Visible-only policy: when enabled (opt-in), attach WebGL only to the terminal(s)
+        // currently on screen and release when they are hidden; when disabled, drop the
+        // observer and let the normal scan attach under the cap.
+        function syncVisibilityPolicy(cfg) {
+          var want = cfg.webgl === true && cfg.webglVisibleOnly === true;
+          if (!want) {
+            if (visibilityObserver) { try { visibilityObserver.disconnect(); } catch (e) {} visibilityObserver = null; }
+            if (observedElements) observedElements.clear();
+            return;
+          }
+          if (!visibilityObserver) {
+            if (typeof IntersectionObserver === 'undefined') return; // unsupported -> normal attach
+            try {
+              visibilityObserver = new IntersectionObserver(function (entries) {
+                var c = readConfig();
+                for (var e = 0; e < entries.length; e++) {
+                  var term = elementToTerm.get(entries[e].target);
+                  if (!term) continue;
+                  if (entries[e].isIntersecting) maybeWebgl(term, c);
+                  else disposeWebglFor(term);
+                }
+              }, { threshold: 0 });
+            } catch (e) { visibilityObserver = null; return; }
+          }
+          try {
+            var nodes = document.querySelectorAll('.xterm');
+            for (var i = 0; i < nodes.length; i++) observeElement(nodes[i]);
+          } catch (e) {}
+        }
+
         function disposeWebglFor(term) {
           try {
             if (!webglAddons) return;
@@ -388,6 +454,7 @@ window.__ModuleLoader__.load({
             if (!webglAddons || !webglLoading) return;
             if (cfg.webgl !== true) { disposeWebglFor(term); return; }
             if (webglAddons.has(term) || webglLoading.has(term)) return;
+            if (cfg.webglVisibleOnly === true && visibilityObserver && !isElementVisible(term)) return; // visible-only: wait until shown
             if (webglAddons.size + webglLoading.size >= webglCap(cfg)) return; // cap counts attached + in-flight
             if (webglSupported === false) return;
             if (webglSupported === undefined) {
@@ -448,6 +515,7 @@ window.__ModuleLoader__.load({
               if (!term) return false;
               elementToTerm.set(el, term);
             }
+            if (visibilityObserver) observeElement(el);
             tune(term, cfg);
             return true;
           } catch (e) { return false; }
@@ -457,6 +525,7 @@ window.__ModuleLoader__.load({
         // tuneElement caches the instance so repeated passes don't re-walk fibers.
         function scan() {
           var cfg = readConfig();
+          try { syncVisibilityPolicy(cfg); } catch (e) {}
           var nodes;
           try { nodes = document.querySelectorAll('.xterm'); } catch (e) { return; }
           var resolved = 0;
@@ -528,6 +597,7 @@ window.__ModuleLoader__.load({
           refresh: function () { try { scan(); } catch (e) {} },
           dispose: function () {
             try { if (observer) observer.disconnect(); } catch (e) {}
+            try { if (visibilityObserver) { visibilityObserver.disconnect(); visibilityObserver = null; } } catch (e) {}
             try { if (webglAddons) { webglAddons.forEach(function (a) { try { a.dispose(); } catch (e) {} }); webglAddons.clear(); } } catch (e) {}
           },
         };
