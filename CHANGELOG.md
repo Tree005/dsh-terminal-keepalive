@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.0
+
+- **Dedicated settings page.** Registers a **Settings → 终端常驻** page (`settings.section` + `settings.section.icon`) with every option in one place — tab kinds, `maxOpenTabs`, `scrollback`, `smoothScrollDuration`, `webgl`, `maxWebgl`, `webglVisibleOnly` — plus a live WebGL status line (`supported / attached / cap`) and a **恢复默认** (reset) button. The compact card on the plugin detail page remains.
+- Renamed the plugin display name from "终端常驻（右栏）" to "**终端常驻**"; the description now names the "官方右侧内置终端".
+
 ## 0.5.4
 
 - **Visible-only WebGL (D3, opt-in, default off).** New settings checkbox `webglVisibleOnly`. When enabled, WebGL is attached only to the terminal currently on screen (tracked with an `IntersectionObserver`) and released when it is hidden (tab/session switch or panel closed), so only ~1 context is held during multi-terminal use. Off by default to keep the current always-attached, smoothest-switch behaviour. Only effective when `webgl` is on and `IntersectionObserver` is available (otherwise it falls back to always-attach).

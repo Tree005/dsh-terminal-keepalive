@@ -113,6 +113,9 @@ window.__ModuleLoader__.load({
     // Labels for the known tab kinds; unknown configured kinds still render so saving never drops them.
     var KIND_LABELS = { terminal: '终端', files: '文件树', text: '文档预览', browser: '浏览器' };
 
+    // Set to the live reconcile() during apply(), so the settings page can re-apply config.
+    var requestReconcile = function () {};
+
     // The settings card rendered on this bundle's page in Settings -> Plugins
     // (slot `plugins.bundle.config`, keyed by the package name). Reads/writes the
     // same localStorage config the keep-alive logic uses, and applies immediately.
@@ -273,6 +276,107 @@ window.__ModuleLoader__.load({
             }
           }, '保存'),
           saved ? h('span', { style: muted }, '已保存，立即生效') : null));
+    }
+
+    // Full settings page: Settings -> 终端常驻 (a `settings.section` entry), sharing
+    // the same localStorage config as the keep-alive/tuning logic.
+    function TerminalSettingsPage() {
+      var initial = readConfig();
+      var ks = React.useState(initial.kinds), kinds = ks[0], setKinds = ks[1];
+      var mx = React.useState(String(initial.maxOpenTabs)), maxText = mx[0], setMaxText = mx[1];
+      var sb = React.useState(initial.scrollback == null ? '' : String(initial.scrollback)), sbText = sb[0], setSbText = sb[1];
+      var sm = React.useState(String(initial.smoothScrollDuration || 0)), smoothText = sm[0], setSmoothText = sm[1];
+      var wg = React.useState(initial.webgl === true), webglOn = wg[0], setWebglOn = wg[1];
+      var mw = React.useState(initial.maxWebgl == null ? '' : String(initial.maxWebgl)), mwText = mw[0], setMwText = mw[1];
+      var vo = React.useState(initial.webglVisibleOnly === true), voOn = vo[0], setVoOn = vo[1];
+      var sv = React.useState(false), saved = sv[0], setSaved = sv[1];
+
+      var allKinds = DEFAULT_KINDS.slice();
+      var known = ['terminal', 'files', 'text', 'browser'];
+      for (var i = 0; i < known.length; i++) if (allKinds.indexOf(known[i]) === -1) allKinds.push(known[i]);
+      for (var j = 0; j < kinds.length; j++) if (allKinds.indexOf(kinds[j]) === -1) allKinds.push(kinds[j]);
+      function toggle(kind) {
+        setSaved(false);
+        setKinds(function (prev) {
+          var idx = prev.indexOf(kind);
+          if (idx === -1) return prev.concat([kind]);
+          var n = prev.slice(); n.splice(idx, 1); return n;
+        });
+      }
+
+      function save() {
+        var max = parseInt(maxText, 10); if (!isFinite(max) || max < 0) max = 0;
+        var sbn = parseInt(sbText, 10); if (!isFinite(sbn) || sbn <= 0) sbn = null;
+        var smooth = parseInt(smoothText, 10); if (!isFinite(smooth) || smooth < 0) smooth = 0;
+        var mwn = parseInt(mwText, 10); if (!isFinite(mwn) || mwn < 1) mwn = null;
+        writeConfig({ kinds: kinds, maxOpenTabs: max, scrollback: sbn, smoothScrollDuration: smooth, webgl: webglOn, maxWebgl: mwn, webglVisibleOnly: voOn });
+        try { requestReconcile(); } catch (e) {}
+        setSaved(true);
+      }
+      function reset() {
+        var d = { kinds: DEFAULT_KINDS.slice(), maxOpenTabs: DEFAULT_MAX_OPEN_TABS, scrollback: null, smoothScrollDuration: 0, webgl: false, maxWebgl: null, webglVisibleOnly: false };
+        writeConfig(d);
+        setKinds(d.kinds); setMaxText(String(d.maxOpenTabs)); setSbText(''); setSmoothText('0'); setWebglOn(false); setMwText(''); setVoOn(false);
+        try { requestReconcile(); } catch (e) {}
+        setSaved(true);
+      }
+
+      var status = null;
+      try { if (typeof window !== 'undefined' && window.__dshTerminalKeepalive && typeof window.__dshTerminalKeepalive.webglStatus === 'function') status = window.__dshTerminalKeepalive.webglStatus(); } catch (e) {}
+
+      var muted = { fontSize: '12px', color: 'var(--dsw-alias-label-tertiary)' };
+      var labelStyle = { fontSize: '13px', color: 'var(--dsw-alias-label-primary)', fontWeight: 500 };
+      var numStyle = { padding: '6px 10px', fontSize: '13px', borderRadius: '6px', boxSizing: 'border-box', width: '180px', color: 'var(--dsw-alias-label-primary)', background: 'var(--dsw-alias-bg-layer-1)', border: '0.5px solid var(--dsw-alias-border-l3)', outline: 'none' };
+      var section = { display: 'flex', flexDirection: 'column', gap: '8px', padding: '14px 0', borderTop: '0.5px solid var(--dsw-alias-border-l3)' };
+      var boxes = allKinds.map(function (kind) {
+        return h('label', { key: kind, style: { display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px', color: 'var(--dsw-alias-label-primary)' } },
+          h('input', { type: 'checkbox', checked: kinds.indexOf(kind) !== -1, onChange: function () { toggle(kind); } }),
+          kind + (KIND_LABELS[kind] ? '（' + KIND_LABELS[kind] + '）' : ''));
+      });
+
+      return h('div', { style: { display: 'flex', flexDirection: 'column', gap: '4px', padding: '4px 0', maxWidth: '720px' } },
+        h('h2', { style: { fontSize: '16px', fontWeight: 600, color: 'var(--dsw-alias-label-primary)', margin: '0 0 2px' } }, '终端常驻'),
+        h('div', { style: muted }, '让官方右侧内置终端在切换标签/会话时保持挂载；并调节缓冲、滚动与渲染。保存后即时生效（WebGL 会即时拉取渲染分块）。'),
+        h('div', { style: section },
+          h('div', { style: labelStyle }, '常驻的标签类型'),
+          h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: '8px' } }, boxes),
+          h('div', { style: muted }, '切 tab / 会话时保持挂载的标签类型。')),
+        h('div', { style: section },
+          h('label', { style: labelStyle }, '内存上限（maxOpenTabs）'),
+          h('input', { type: 'number', min: 0, value: maxText, onChange: function (e) { setMaxText(e.target.value); setSaved(false); }, style: numStyle }),
+          h('div', { style: muted }, '这些类型的打开标签数超过此值时整类不再常驻；0 = 不设门槛。')),
+        h('div', { style: section },
+          h('label', { style: labelStyle }, '终端历史行数（scrollback）'),
+          h('input', { type: 'number', min: 0, placeholder: '留空 = 跟随官方（默认 1000）', value: sbText, onChange: function (e) { setSbText(e.target.value); setSaved(false); }, style: numStyle }),
+          h('div', { style: muted }, '浏览器侧 xterm 缓冲上限；留空沿用官方值。')),
+        h('div', { style: section },
+          h('label', { style: labelStyle }, '平滑滚动时长（毫秒）'),
+          h('input', { type: 'number', min: 0, placeholder: '0 = 关闭', value: smoothText, onChange: function (e) { setSmoothText(e.target.value); setSaved(false); }, style: numStyle }),
+          h('div', { style: muted }, '滚动动画时长；配合 WebGL 建议 100–130，0 = 关闭。')),
+        h('div', { style: section },
+          h('label', { style: { display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px', color: 'var(--dsw-alias-label-primary)' } },
+            h('input', { type: 'checkbox', checked: webglOn, onChange: function (e) { setWebglOn(e.target.checked); setSaved(false); } }),
+            '实验：WebGL 渲染器（GPU，显著提升滚动/输出流畅度）'),
+          h('div', { style: { display: 'flex', flexDirection: 'column', gap: '6px', maxWidth: '360px' } },
+            h('label', { style: labelStyle }, 'WebGL 上限（maxWebgl）'),
+            h('input', { type: 'number', min: 1, placeholder: '留空 = 跟随内存上限（至少 8）', value: mwText, onChange: function (e) { setMwText(e.target.value); setSaved(false); }, style: numStyle })),
+          h('label', { style: { display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px', color: 'var(--dsw-alias-label-primary)' } },
+            h('input', { type: 'checkbox', checked: voOn, onChange: function (e) { setVoOn(e.target.checked); setSaved(false); } }),
+            'WebGL 只作用于"当前可见"终端（省显存/context，切换可能略抖动）'),
+          status ? h('div', { style: muted }, 'WebGL 状态：' + (status.supported ? '支持' : '不支持/回退') + '；已挂 ' + status.attached + ' 台；上限 ' + status.cap) : null),
+        h('div', { style: { display: 'flex', alignItems: 'center', gap: '12px', paddingTop: '6px' } },
+          h('button', { type: 'button', onClick: save, style: { padding: '6px 16px', fontSize: '13px', borderRadius: '6px', cursor: 'pointer', color: 'var(--dsw-alias-label-primary)', background: 'var(--dsw-alias-bg-layer-1)', border: '0.5px solid var(--dsw-alias-border-l3)' } }, '保存'),
+          h('button', { type: 'button', onClick: reset, style: { padding: '6px 16px', fontSize: '13px', borderRadius: '6px', cursor: 'pointer', color: 'var(--dsw-alias-label-primary)', background: 'transparent', border: '0.5px solid var(--dsw-alias-border-l3)' } }, '恢复默认'),
+          saved ? h('span', { style: muted }, '已保存，立即生效') : null));
+    }
+
+    // Nav icon for the settings section (Settings left nav), addressed by the section id.
+    function TerminalSettingsIcon(props) {
+      var size = (props && props.size) || 18;
+      return h('svg', { width: size, height: size, viewBox: '0 0 64 64', fill: 'none', 'aria-hidden': 'true' },
+        h('rect', { x: 6, y: 10, width: 52, height: 44, rx: 8, stroke: 'currentColor', strokeWidth: 3 }),
+        h('path', { d: 'M16 26l9 7-9 7', stroke: 'currentColor', strokeWidth: 3.5, strokeLinecap: 'round', strokeLinejoin: 'round', fill: 'none' }),
+        h('path', { d: 'M30 40h14', stroke: 'currentColor', strokeWidth: 3.5, strokeLinecap: 'round', fill: 'none' }));
     }
 
     // Live tuning of already-running xterm instances.
@@ -752,6 +856,7 @@ window.__ModuleLoader__.load({
           }
 
           // First pass: fix definitions registered before this plugin applied.
+          requestReconcile = reconcile;
           var first = reconcile();
           var seen = first.cfg.kinds.length === 0;
 
@@ -832,6 +937,24 @@ window.__ModuleLoader__.load({
             }
           } catch (e) {
             try { console.warn(LOG, 'settings card unavailable:', e); } catch (x) {}
+          }
+
+          // Dedicated settings page in the Settings panel: Settings -> 终端常驻.
+          try {
+            if (ctx.slots && typeof ctx.slots.inject === 'function' && typeof ctx.slots.register === 'function') {
+              ctx.effect(function () {
+                return ctx.slots.inject('settings.section', function () {
+                  return ctx.slots.register({ name: 'settings.section', id: 'dsh-terminal-keepalive', order: 25, label: '终端常驻' }, TerminalSettingsPage);
+                });
+              });
+              ctx.effect(function () {
+                return ctx.slots.inject('settings.section.icon', function () {
+                  return ctx.slots.register({ name: 'settings.section.icon', id: 'dsh-terminal-keepalive' }, TerminalSettingsIcon);
+                });
+              });
+            }
+          } catch (e) {
+            try { console.warn(LOG, 'settings section unavailable:', e); } catch (x) {}
           }
 
           // One-shot diagnostic so a DSH API change fails loudly instead of silently.

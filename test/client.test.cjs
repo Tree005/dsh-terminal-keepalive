@@ -419,3 +419,17 @@ test('webgl visible-only off (default): hidden-size terminal still attaches', as
   } finally { env.dispose(); }
 });
 
+test('registers a dedicated settings page (settings.section) + nav icon', () => {
+  const env = setup();
+  try {
+    const sec = env.slots._regs.find((r) => r.opts.name === 'settings.section');
+    assert.ok(sec, 'settings.section registered');
+    assert.strictEqual(sec.opts.id, 'dsh-terminal-keepalive');
+    assert.strictEqual(typeof sec.comp, 'function');
+    const icon = env.slots._regs.find((r) => r.opts.name === 'settings.section.icon');
+    assert.ok(icon, 'settings.section.icon registered');
+    assert.strictEqual(icon.opts.id, 'dsh-terminal-keepalive');
+    assert.strictEqual(typeof icon.comp, 'function');
+  } finally { env.dispose(); }
+});
+
