@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.2
+
+- Settings page UX polish: **一键推荐** (enable WebGL + smooth-scroll 110 when WebGL2 is available), a recommendation banner (suggests enabling WebGL / raising smooth-scroll), inline **field validation** hints for invalid numbers, and **复制配置 / 粘贴导入** (copy / import the config JSON via the clipboard). Reset-to-default was already present.
+
 ## 0.6.1
 
 - Removed the duplicate config card on the plugin detail page. **Settings → 终端常驻** is now the single configuration surface (the plugin detail page no longer repeats the form); the plugin description points to it.
