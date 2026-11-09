@@ -23,8 +23,15 @@ Then fully quit and restart DSH. A local directory install is a link, so edits a
 From GitHub:
 
 ```sh
+# Recommended: uses git, avoids the codeload.github.com tarball host
+# (which some networks reset with ECONNRESET).
+dsh plugin --profile desktop add "git+https://github.com/Tree005/dsh-terminal-keepalive.git"
+
+# Shorthand; may fail on networks that block/reset codeload.github.com.
 dsh plugin --profile desktop add "github:Tree005/dsh-terminal-keepalive"
 ```
+
+Restart DSH after installing.
 
 ## How it works
 
