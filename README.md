@@ -93,6 +93,7 @@ Later versions tune each **running** terminal live, without restarting DSH: the 
 
 | DSH | Status |
 |---|---|
+| Desktop 0.2.2-rc.3 | verified working (settings slot, `sidebarRightTabs`, `keepMounted`, `openTabs` intact; xterm `^6.0.0`) |
 | Desktop 0.2.2-rc.1 | verified working |
 | newer | not yet verified — see the regression checklist below |
 
